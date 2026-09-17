@@ -549,7 +549,6 @@
     }
 
     /* ==================================================================
-       「寻访数据」全屏面板    /* ==================================================================
        「寻访数据」全屏面板：收编原来的侧栏内容（结果 / 统计 / 保底 /
        历史 / 卡池详情 / 模拟 / 重置 / 概率说明），全部换成深色皮肤
        ================================================================== */
@@ -2392,7 +2391,9 @@
     .scout-fall-stars {
       position: absolute;
       left: var(--x, 50%);
-      top: -6vh;
+      /* 用 vmin：竖屏伪横屏时 vh 是长边，而旋转后内容的可见高度是短边（100vmin），
+         这样横竖两种状态下星星都正好从内容顶部外落到内容底部外 */
+      top: -6vmin;
       color: #ffd76a;
       font-size: var(--size, 1.6vmin);
       line-height: 1;
@@ -2419,7 +2420,7 @@
       }
       100% {
         opacity: 0;
-        transform: translateY(112vh) rotate(200deg);
+        transform: translateY(112vmin) rotate(200deg);
       }
     }
 
@@ -2783,7 +2784,12 @@
        已按新设计删除——震动改成只有 6★ 才触发的「相机层」冲击（见 .scout-camera）。
        body 上不再有任何 transform，避免破坏 fixed 遮罩的定位基准。 */
 
-    @media (max-width: 900px) {
+    /*
+     * 窄屏适配只在「真横屏」下生效。
+     * 竖屏手机走的是伪横屏（body 被旋转 90°），此时内容的实际宽度是屏幕长边，
+     * 按视口宽度（短边）来缩卡片会缩错，所以直接交给常规布局。
+     */
+    @media (max-width: 900px) and (orientation: landscape) {
       .pool-main {
         bottom: 26vmin;
         padding-top: 10vmin;
@@ -2810,7 +2816,7 @@
       }
     }
 
-    @media (max-width: 560px) {
+    @media (max-width: 560px) and (orientation: landscape) {
       .data-button {
         left: 10px;
         top: 10px;
@@ -2891,6 +2897,74 @@
 
       .pool-list {
         grid-template-columns: 1fr;
+      }
+    }
+
+    /* 「请横屏握持」提示：默认不显示，只有竖屏旋转态才打开（见下面的媒体查询） */
+    .rotate-hint {
+      display: none;
+      position: fixed;
+      left: 50%;
+      bottom: 6vmin;
+      z-index: 70;
+      margin: 0;
+      padding: 1vmin 2.4vmin;
+      border: 1px solid rgba(160, 200, 240, 0.35);
+      border-radius: 999px;
+      background: rgba(6, 11, 21, 0.82);
+      color: #dce7f4;
+      font-size: 14px;
+      letter-spacing: 0.08em;
+      white-space: nowrap;
+      /* 反方向转回来，这样竖着拿手机也能正常阅读 */
+      transform: translateX(-50%) rotate(-90deg);
+      pointer-events: none;
+      animation: rotate-hint-fade 2.8s ease-out 1 both;
+    }
+
+    @keyframes rotate-hint-fade {
+      0% {
+        opacity: 0;
+      }
+      12% {
+        opacity: 1;
+      }
+      72% {
+        opacity: 1;
+      }
+      100% {
+        opacity: 0;
+      }
+    }
+
+    /* ==================================================================
+       移动端「伪横屏」：竖屏时把整个页面顺时针转 90°，横握手机即可获得
+       与游戏一致的横向体验；系统自动旋转开着时物理转屏，媒体查询失效，
+       自动回到常规横屏，两种状态无缝切换。
+       ------------------------------------------------------------------
+       注意：body 一旦带上 transform，body 内部所有 position: fixed 元素
+       都会改为「相对 body 定位」——这正是我们要的：寻访动画遮罩、
+       「寻访数据」全屏面板、左上角按钮都会跟着内容一起旋转并铺满画布。
+       这一段必须写在 .rotate-hint 基础样式之后，否则 display: none 会盖掉它。
+       ================================================================== */
+    @media (orientation: portrait) {
+      body {
+        position: fixed;
+        top: 0;
+        left: 0;
+        /* 内容尺寸按「长边 × 短边」摆好，再把宽度方向的顶边转到屏幕右侧 */
+        width: 100vh;   /* 兜底：不支持 dvh/dvw 的旧浏览器 */
+        height: 100vw;
+        width: 100dvh;
+        height: 100dvw;
+        transform: rotate(90deg) translateY(-100%);
+        transform-origin: top left;
+        overflow: hidden;
+      }
+
+      /* 竖屏旋转态才出现的「请横屏握持」提示 */
+      .rotate-hint {
+        display: block;
       }
     }
 
@@ -2990,7 +3064,9 @@
     </div>
   </div>
 
-  <!-- ============ 「寻访数据」全屏面板  <!-- ============ 「寻访数据」全屏面板  <!-- ============ 「寻访数据」全屏面板：收编原侧栏全部内容 ============ -->
+  <p class="rotate-hint" aria-hidden="true">↻ 请横屏握持手机</p>
+
+  <!-- ============ 「寻访数据」全屏面板：收编原侧栏全部内容 ============ -->
   <div class="data-panel" id="data-panel" aria-hidden="true">
     <div class="data-panel-backdrop" id="data-panel-backdrop"></div>
 
@@ -4214,6 +4290,35 @@ RESOURCE</p>
       ? window.matchMedia("(prefers-reduced-motion: reduce)")
       : { matches: false };
 
+    /*
+     * 竖屏伪横屏：CSS 在 (orientation: portrait) 下会把整个 body 顺时针转 90°，
+     * 让用户横握手机就能得到横向布局。JS 这边必须知道当前是不是这种「旋转态」，
+     * 因为拖拽轴向和火星坐标都要跟着换算。
+     */
+    const portraitQuery = window.matchMedia
+      ? window.matchMedia("(orientation: portrait)")
+      : { matches: false };
+    let isPortraitForced = portraitQuery.matches === true;
+
+    // 用户开了系统自动旋转并物理转屏：切回常规横屏（或再转回竖屏），
+    // 转屏瞬间如果正在拖拽，就安全中止（弹回 0），避免轴向错乱导致一碰就拉满。
+    function handleOrientationChange() {
+      const nextPortrait = portraitQuery.matches === true;
+      if (nextPortrait === isPortraitForced) {
+        return;
+      }
+      isPortraitForced = nextPortrait;
+      if (dragging) {
+        onPointerUp();
+      }
+    }
+
+    if (typeof portraitQuery.addEventListener === "function") {
+      portraitQuery.addEventListener("change", handleOrientationChange);
+    } else if (typeof portraitQuery.addListener === "function") {
+      portraitQuery.addListener(handleOrientationChange);
+    }
+
     let animationRunning = false;  // 动画是否进行中（挡住连点）
     let scoutPhase = "idle";       // idle / bag / drag / burst / file / darken / show / leaving
     let animationTimers = [];      // 本次动画所有待触发的定时器，跳过时统一清掉
@@ -4229,8 +4334,9 @@ RESOURCE</p>
     let dragging = false;          // 手指/鼠标是否正按着
     let returning = false;         // 没拉到底，是否正在弹回
     let dragPointerId = null;
-    let dragStartX = 0;
-    let dragTravel = 1;            // 拉链头要滑过的水平距离（px）
+    let dragStartX = 0;            // 按下时的屏幕 X（横屏用）
+    let dragStartY = 0;            // 按下时的屏幕 Y（竖屏伪横屏用）
+    let dragTravel = 1;            // 拉链头要滑过的行程（px）
     let pullValue = 0;             // 当前进度 0~1（真正写进 CSS 的值）
     let pullTarget = 0;            // 指针算出来的目标进度
     let pullFrameId = 0;           // requestAnimationFrame 句柄
@@ -4414,11 +4520,27 @@ RESOURCE</p>
         return;
       }
 
-      // 把拉链头的屏幕坐标换算成舞台内坐标（getBoundingClientRect 已经包含旋转）
+      /*
+       * 把拉链头的屏幕坐标换算成舞台内的「内容坐标」。
+       *
+       * 为什么不能直接用 getBoundingClientRect 的差值？
+       *   rect 给的是「屏幕坐标」。横屏时屏幕坐标 = 内容坐标，差值可以直接用；
+       *   但竖屏伪横屏（body 被 rotate(90deg)）时，屏幕坐标和内容坐标差了 90°，
+       *   直接赋给 style.left/top 会让火星整体偏 90°。
+       *   关系是：内容 +x 映射到屏幕 +y，内容 +y 映射到屏幕 -x，
+       *   所以反旋转回来就是 dx_local = dy_screen、dy_local = -dx_screen。
+       *   另外旋转后「内容原点 (0,0)」落在屏幕的右上角，所以取 rect 的
+       *   right/top 作参考点（横屏时内容原点就在左上角，取 left/top）。
+       */
       const pullRect = scoutPull.getBoundingClientRect();
       const sceneRect = scoutScene.getBoundingClientRect();
-      const x = pullRect.left + pullRect.width / 2 - sceneRect.left;
-      const y = pullRect.top + pullRect.height / 2 - sceneRect.top;
+      const pullCenterX = pullRect.left + pullRect.width / 2;
+      const pullCenterY = pullRect.top + pullRect.height / 2;
+      const originX = isPortraitForced ? sceneRect.right : sceneRect.left;
+      const dxScreen = pullCenterX - originX;
+      const dyScreen = pullCenterY - sceneRect.top;
+      const x = isPortraitForced ? dyScreen : dxScreen;
+      const y = isPortraitForced ? -dxScreen : dyScreen;
 
       // 每个火星随机一点方向，看起来更自然
       const side = Math.random() < 0.5 ? -1 : 1;
@@ -4496,11 +4618,17 @@ RESOURCE</p>
       returning = false;
       scoutPhase = "drag";
       dragStartX = event.clientX;
+      dragStartY = event.clientY; // 竖屏伪横屏时要改用 Y 轴判断拉动方向
       pullTarget = 0;
       pullValue = 0;
       sparkDebt = 0;
-      // 拉链头要滑过的距离 = 轨道宽度的 80%（从右端 88% 滑到左端 8%）
-      dragTravel = Math.max(scoutZip.getBoundingClientRect().width * 0.8, 1);
+      /*
+       * 拉链头要滑过的距离 = 轨道长边的 80%（从右端 88% 滑到左端 8%）。
+       * 竖屏伪横屏时整个页面转了 90°，拉链元素的包围盒宽高会互换，
+       * 这时 rect.width 只是细边的长度，必须取长边才能得到真实行程。
+       */
+      const zipRect = scoutZip.getBoundingClientRect();
+      dragTravel = Math.max(Math.max(zipRect.width, zipRect.height) * 0.8, 1);
 
       // 指针捕获：手指滑出袋子也能继续拖（不支持的环境跳过即可）
       if (event.pointerId !== undefined && typeof scoutBag.setPointerCapture === "function") {
@@ -4520,8 +4648,15 @@ RESOURCE</p>
       if (!dragging || scoutPhase !== "drag") {
         return;
       }
-      // 进度 = 向左拖动的水平位移 / 轨道全长
-      const movedLeft = dragStartX - event.clientX;
+      /*
+       * 进度 = 向「视觉左」拖动的位移 / 轨道行程。
+       * 横屏：视觉左 = 屏幕左，用 X 轴。
+       * 竖屏伪横屏：内容被转了 90°，内容的 +x 映射到屏幕的 +y，
+       *   所以「向视觉左拉」对应的是手指在屏幕上「向上滑」，必须用 Y 轴。
+       */
+      const movedLeft = isPortraitForced
+        ? dragStartY - event.clientY
+        : dragStartX - event.clientX;
       pullTarget = Math.max(0, Math.min(movedLeft / dragTravel, 1));
       ensurePullFrames();
 
