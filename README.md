@@ -1,2 +1,2 @@
 # arknights-gacha-simulator
-简单的方舟抽卡模拟
+简单的明日方舟限定抽卡模拟🫠
