@@ -1,0 +1,5248 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light">
+  <title>明日方舟抽卡模拟器 · 圣城春日学生寻访（联动）</title>
+  <style>
+    /* ==================================================================
+       主界面：仿游戏内卡池页（全屏深蓝黑）
+       ------------------------------------------------------------------
+       结构：.pool-page 里放背景装饰 + 三张 UP 干员卡 + 概率提升横幅
+             + 左下池名与保底计数 + 右下两颗大按钮
+             左上角固定一个「寻访数据」按钮，打开 .data-panel 全屏面板
+       全部视觉都是 CSS 渐变 / clip-path / 文字重绘，没有任何美术素材。
+       ================================================================== */
+
+    :root {
+      /* 深色 UI 的基础色：面板内部沿用同一套变量，改名不改结构 */
+      --bg: #05080f;
+      --pool-core: #16233f;
+      --panel: rgba(11, 18, 32, 0.94);
+      --card: rgba(16, 26, 44, 0.82);
+      --ink: #e8eef6;
+      --muted: #8ea3bd;
+      --line: rgba(140, 175, 220, 0.22);
+      --line-soft: rgba(140, 175, 220, 0.12);
+      --blue: #4ea3e0;
+      --blue-deep: #1b3a7d;
+      --gold: #f0c020;
+      --gold-soft: #ffd76a;
+      --teal: #1c6f8f;
+      --teal-dark: #14556e;
+      --navy: #16233f;
+      --amber: #d99a2b;
+      --danger: #e07575;
+      --shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-width: 320px;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC",
+        system-ui, sans-serif;
+    }
+
+    button {
+      font: inherit;
+    }
+
+    .pool-page {
+      position: fixed;
+      inset: 0;
+      overflow: hidden;
+    }
+
+    /* 深蓝黑径向渐变底：中心偏蓝、四周压暗 */
+    .pool-page::before {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(
+        120% 95% at 50% 42%,
+        #1b2c4d 0%,
+        #16233f 26%,
+        #0b1425 58%,
+        #05080f 100%
+      );
+      content: "";
+    }
+
+    /* 蓝色碎片装饰：clip-path 多边形，分布在四周 */
+    .pool-bg {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    .pool-shard {
+      position: absolute;
+      background: linear-gradient(
+        140deg,
+        rgba(78, 163, 224, 0.9),
+        rgba(27, 58, 125, 0.25) 70%,
+        rgba(78, 163, 224, 0)
+      );
+      opacity: 0.1;
+    }
+
+    .pool-shard:nth-child(1) {
+      left: -6%;
+      top: 6%;
+      width: 26vmin;
+      height: 34vmin;
+      clip-path: polygon(0 0, 100% 22%, 62% 100%, 8% 74%);
+      opacity: 0.14;
+    }
+
+    .pool-shard:nth-child(2) {
+      left: 12%;
+      bottom: -8%;
+      width: 34vmin;
+      height: 30vmin;
+      clip-path: polygon(18% 0, 100% 30%, 74% 100%, 0 68%);
+      opacity: 0.09;
+    }
+
+    .pool-shard:nth-child(3) {
+      right: -4%;
+      top: -6%;
+      width: 30vmin;
+      height: 40vmin;
+      clip-path: polygon(40% 0, 100% 18%, 78% 100%, 0 62%);
+      opacity: 0.12;
+    }
+
+    .pool-shard:nth-child(4) {
+      right: 10%;
+      bottom: -10%;
+      width: 28vmin;
+      height: 34vmin;
+      clip-path: polygon(0 14%, 82% 0, 100% 76%, 26% 100%);
+      opacity: 0.08;
+    }
+
+    .pool-shard:nth-child(5) {
+      left: 34%;
+      top: -12%;
+      width: 22vmin;
+      height: 26vmin;
+      clip-path: polygon(50% 0, 100% 60%, 44% 100%, 0 44%);
+      opacity: 0.06;
+    }
+
+    .pool-shard:nth-child(6) {
+      left: 6%;
+      top: 44%;
+      width: 18vmin;
+      height: 22vmin;
+      clip-path: polygon(0 0, 88% 26%, 100% 82%, 20% 100%);
+      opacity: 0.07;
+    }
+
+    .pool-shard:nth-child(7) {
+      right: 30%;
+      bottom: 6%;
+      width: 20vmin;
+      height: 18vmin;
+      clip-path: polygon(10% 0, 100% 34%, 68% 100%, 0 74%);
+      opacity: 0.06;
+    }
+
+    .pool-shard:nth-child(8) {
+      right: -6%;
+      top: 40%;
+      width: 24vmin;
+      height: 28vmin;
+      clip-path: polygon(26% 0, 100% 40%, 70% 100%, 0 56%);
+      opacity: 0.11;
+    }
+
+    /* 右上一束很淡的斜向体积光 */
+    .pool-beam {
+      position: absolute;
+      top: -18%;
+      right: -6%;
+      width: 44vmin;
+      height: 78vmin;
+      background: linear-gradient(
+        198deg,
+        rgba(150, 200, 255, 0.22) 0%,
+        rgba(120, 170, 240, 0.08) 36%,
+        rgba(120, 170, 240, 0) 72%
+      );
+      clip-path: polygon(48% 0%, 100% 0%, 56% 100%, 20% 100%);
+      filter: blur(2vmin);
+      transform: rotate(12deg);
+    }
+
+    /* ---------- 左上角「寻访数据」按钮：带呼吸辉光 ---------- */
+    .data-button {
+      position: fixed;
+      left: max(2.2vmin, 12px);
+      top: max(2.2vmin, 12px);
+      z-index: 60;
+      display: grid;
+      width: 40px;
+      height: 40px;
+      place-items: center;
+      border: 1px solid rgba(160, 200, 240, 0.35);
+      border-radius: 6px;
+      background: rgba(10, 18, 32, 0.7);
+      color: #cfe0f2;
+      cursor: pointer;
+      font-size: 16px;
+      line-height: 1;
+      animation: data-button-breathe 2.4s ease-in-out infinite;
+    }
+
+    .data-button:hover {
+      border-color: rgba(200, 225, 255, 0.7);
+      color: #ffffff;
+    }
+
+    .data-button:focus-visible {
+      outline: 2px solid rgba(120, 180, 240, 0.6);
+      outline-offset: 2px;
+    }
+
+    /* 呼吸辉光：幅度克制，只做明暗循环 */
+    @keyframes data-button-breathe {
+      0%,
+      100% {
+        box-shadow: 0 0 0 0 rgba(78, 163, 224, 0.08),
+          0 0 8px rgba(78, 163, 224, 0.16);
+      }
+      50% {
+        box-shadow: 0 0 0 3px rgba(78, 163, 224, 0.06),
+          0 0 16px rgba(120, 190, 255, 0.42);
+      }
+    }
+
+    /* ---------- 中部：三张 UP 干员卡（斜切角） ---------- */
+    .pool-main {
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 0;
+      bottom: 22vmin;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 2.4vmin;
+      padding: 8vmin 4vmin 0;
+    }
+
+    .up-cards {
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      gap: 1.8vmin;
+    }
+
+    .up-card {
+      position: relative;
+      display: flex;
+      width: 26vmin;
+      height: 34vmin;
+      flex-direction: column;
+      justify-content: flex-end;
+      overflow: hidden;
+      border: 1px solid rgba(150, 190, 235, 0.4);
+      padding: 1.6vmin;
+      background: linear-gradient(
+        160deg,
+        rgba(30, 52, 88, 0.92) 0%,
+        rgba(14, 24, 42, 0.95) 55%,
+        rgba(8, 14, 26, 0.98) 100%
+      );
+      clip-path: polygon(0 7%, 7% 0, 100% 0, 100% 93%, 93% 100%, 0 100%);
+      box-shadow: 0 1.4vmin 3vmin rgba(0, 0, 0, 0.45);
+      transform: rotate(-0.6deg);
+    }
+
+    /* 卡面上的斜切光带（纯装饰） */
+    .up-card::before {
+      position: absolute;
+      top: -20%;
+      left: -10%;
+      width: 60%;
+      height: 150%;
+      background: linear-gradient(
+        100deg,
+        rgba(120, 180, 240, 0) 0%,
+        rgba(140, 200, 255, 0.16) 45%,
+        rgba(120, 180, 240, 0) 100%
+      );
+      content: "";
+      transform: rotate(14deg);
+    }
+
+    .up-card.up-six {
+      width: 31vmin;
+      height: 40vmin;
+      border-color: rgba(240, 192, 32, 0.75);
+      box-shadow: 0 0 0 1px rgba(240, 192, 32, 0.25),
+        0 0 4vmin rgba(240, 192, 32, 0.28), 0 1.6vmin 3.4vmin rgba(0, 0, 0, 0.5);
+      transform: rotate(0deg);
+    }
+
+    .up-card.up-six::before {
+      background: linear-gradient(
+        100deg,
+        rgba(255, 214, 106, 0) 0%,
+        rgba(255, 226, 150, 0.22) 45%,
+        rgba(255, 214, 106, 0) 100%
+      );
+    }
+
+    /* 卡片右上角的小标签（联动限定 / 联动 UP） */
+    .up-card-tag {
+      position: absolute;
+      right: 0;
+      top: 0;
+      padding: 0.5vmin 1.2vmin;
+      background: rgba(27, 58, 125, 0.9);
+      color: #cfe4ff;
+      font-size: max(1.1vmin, 10px);
+      font-weight: 700;
+      letter-spacing: 0.1em;
+    }
+
+    .up-card.up-six .up-card-tag {
+      background: linear-gradient(135deg, #b8860b, #f0c020);
+      color: #2a1c00;
+    }
+
+    /* 卡片中间的装饰光晕（代替立绘，不放任何美术素材） */
+    .up-card-art {
+      position: absolute;
+      left: 50%;
+      top: 34%;
+      width: 70%;
+      height: 52%;
+      border-radius: 50%;
+      background: radial-gradient(
+        closest-side,
+        rgba(150, 200, 255, 0.24),
+        rgba(120, 170, 240, 0) 78%
+      );
+      filter: blur(1vmin);
+      transform: translate(-50%, -50%);
+    }
+
+    .up-card.up-six .up-card-art {
+      background: radial-gradient(
+        closest-side,
+        rgba(255, 214, 106, 0.32),
+        rgba(255, 190, 60, 0) 78%
+      );
+    }
+
+    .up-card-foot {
+      position: relative;
+      z-index: 1;
+    }
+
+    .up-card-name {
+      margin: 0;
+      color: #f4f8fd;
+      font-size: max(2.6vmin, 16px);
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-shadow: 0 0 1.4vmin rgba(0, 0, 0, 0.75);
+    }
+
+    .up-card.up-six .up-card-name {
+      color: #fff3cf;
+      text-shadow: 0 0 2vmin rgba(240, 192, 32, 0.6);
+    }
+
+    .up-card-stars {
+      margin: 0.4vmin 0 0;
+      color: #dbe6f2;
+      font-size: max(1.5vmin, 11px);
+      letter-spacing: 0.08em;
+    }
+
+    .up-card.up-six .up-card-stars {
+      color: var(--gold-soft);
+    }
+
+    /* ---------- 概率提升横幅 ---------- */
+    .rate-banner {
+      display: flex;
+      width: min(92vmin, 92%);
+      align-items: center;
+      justify-content: space-between;
+      gap: 1.6vmin;
+      border-left: 0.5vmin solid #7fc0f5;
+      padding: 1.3vmin 2vmin;
+      background: linear-gradient(
+        90deg,
+        rgba(27, 90, 160, 0.92) 0%,
+        rgba(28, 60, 120, 0.78) 55%,
+        rgba(20, 42, 88, 0.6) 100%
+      );
+      color: #ffffff;
+      font-size: max(2vmin, 14px);
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      text-shadow: 0 0 1vmin rgba(0, 0, 0, 0.6);
+      clip-path: polygon(0 0, 100% 0, 100% 72%, 96% 100%, 0 100%);
+    }
+
+    .rate-banner-arrow {
+      font-size: 1.3em;
+      line-height: 1;
+      transform: rotate(-20deg);
+    }
+
+    /* ---------- 底部：左下信息块 + 右下两颗大按钮 ---------- */
+    .pool-foot {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 3vmin;
+      padding: 0 max(4vmin, 16px) max(4vmin, 16px);
+    }
+
+    .pool-info {
+      min-width: 0;
+    }
+
+    .pool-name {
+      margin: 0 0 1.2vmin;
+      color: #ffffff;
+      font-size: max(3vmin, 18px);
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-shadow: 0 0 2vmin rgba(0, 0, 0, 0.8);
+    }
+
+    /* 「剩余 N 次寻访必得」计数条 */
+    .pity-counter {
+      display: inline-flex;
+      align-items: center;
+      gap: 1vmin;
+      border: 1px solid rgba(150, 190, 235, 0.28);
+      border-radius: 3px;
+      padding: 0.8vmin 1.6vmin 0.8vmin 1.2vmin;
+      background: rgba(8, 14, 26, 0.78);
+      color: #cfe0f2;
+      font-size: max(1.5vmin, 11px);
+      letter-spacing: 0.08em;
+    }
+
+    .pity-counter-number {
+      min-width: 5vmin;
+      padding: 0.2vmin 1.2vmin;
+      background: linear-gradient(180deg, #2f7fd0, #1b4f95);
+      color: #ffffff;
+      font-size: max(2.2vmin, 15px);
+      font-weight: 800;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .draw-actions {
+      display: flex;
+      flex: 0 0 auto;
+      align-items: center;
+      gap: 1.8vmin;
+    }
+
+    .btn-draw {
+      min-width: 22vmin;
+      height: 7vmin;
+      min-height: 44px;
+      border: 1px solid transparent;
+      padding: 0 3vmin;
+      cursor: pointer;
+      font-size: max(2.2vmin, 15px);
+      font-weight: 800;
+      letter-spacing: 0.12em;
+      transition: transform 120ms ease, filter 120ms ease;
+      clip-path: polygon(6% 0, 100% 0, 100% 74%, 94% 100%, 0 100%, 0 26%);
+    }
+
+    .btn-draw:hover {
+      transform: translateY(-2px);
+      filter: brightness(1.1);
+    }
+
+    .btn-draw:active {
+      transform: translateY(0);
+    }
+
+    .btn-draw:focus-visible {
+      outline: 3px solid rgba(120, 180, 240, 0.45);
+      outline-offset: 3px;
+    }
+
+    .btn-draw:disabled {
+      cursor: wait;
+      filter: none;
+      opacity: 0.6;
+      transform: none;
+    }
+
+    .btn-draw-single {
+      border-color: rgba(220, 235, 250, 0.6);
+      background: rgba(12, 20, 36, 0.85);
+      color: #ffffff;
+    }
+
+    .btn-draw-ten {
+      border-color: rgba(255, 226, 150, 0.85);
+      background: linear-gradient(180deg, #f5cb3c, #e0ab12);
+      color: #2a1c00;
+      box-shadow: 0 0 3vmin rgba(240, 192, 32, 0.28);
+    }
+
+    /* ---------- 结城理庆祝横幅（适配深色 UI） ---------- */
+    .collab-banner {
+      display: none;
+      position: absolute;
+      left: 50%;
+      top: max(10vmin, 56px);
+      z-index: 30;
+      padding: 1vmin 2.4vmin;
+      background: linear-gradient(100deg, #0d1c3f, #23407f 55%, #43307a);
+      border: 1px solid rgba(255, 217, 138, 0.5);
+      color: #ffe6a8;
+      font-size: max(1.5vmin, 12px);
+      font-weight: 800;
+      letter-spacing: 0.14em;
+      text-align: center;
+      text-shadow: 0 0 1.4vmin rgba(255, 214, 106, 0.85);
+      transform: translateX(-50%);
+      white-space: nowrap;
+    }
+
+    .collab-banner.is-on {
+      display: block;
+      animation: banner-in 600ms ease-out 1;
+    }
+
+    @keyframes banner-in {
+      0% {
+        opacity: 0;
+        letter-spacing: 6px;
+      }
+      100% {
+        opacity: 1;
+        letter-spacing: 0.14em;
+      }
+    }
+
+    /* ==================================================================
+       「寻访数据」全屏面板    /* ==================================================================
+       「寻访数据」全屏面板：收编原来的侧栏内容（结果 / 统计 / 保底 /
+       历史 / 卡池详情 / 模拟 / 重置 / 概率说明），全部换成深色皮肤
+       ================================================================== */
+    .data-panel {
+      position: fixed;
+      inset: 0;
+      z-index: 8000;
+      visibility: hidden;
+      opacity: 0;
+      transition: opacity 200ms ease-out, visibility 0s linear 200ms;
+    }
+
+    .data-panel.is-open {
+      visibility: visible;
+      opacity: 1;
+      transition: opacity 200ms ease-out;
+    }
+
+    .data-panel-backdrop {
+      position: absolute;
+      inset: 0;
+      background: rgba(2, 4, 9, 0.72);
+    }
+
+    /* 面板本体：全屏、内部滚动；padding 区域就是「点击面板外」的落点 */
+    .data-panel-sheet {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      padding: max(2.4vmin, 14px);
+      background: radial-gradient(
+        130% 100% at 50% 0%,
+        #16233f 0%,
+        #0b1425 52%,
+        #05080f 100%
+      );
+    }
+
+    .data-panel-head {
+      display: flex;
+      flex: 0 0 auto;
+      align-items: center;
+      justify-content: space-between;
+      gap: 2vmin;
+      border-bottom: 1px solid var(--line);
+      padding-bottom: 1.2vmin;
+    }
+
+    .data-panel-head h2 {
+      display: flex;
+      align-items: center;
+      gap: 1.2vmin;
+      margin: 0;
+      color: #ffffff;
+      font-size: max(2.4vmin, 16px);
+      letter-spacing: 0.1em;
+    }
+
+    /* 标题前的小金条（斜切角） */
+    .data-panel-head h2::before {
+      width: 0.6vmin;
+      height: 2.2vmin;
+      background: linear-gradient(180deg, var(--gold-soft), var(--gold));
+      content: "";
+      clip-path: polygon(0 0, 100% 18%, 100% 100%, 0 82%);
+    }
+
+    .data-panel-close {
+      width: 40px;
+      height: 40px;
+      border: 1px solid rgba(160, 200, 240, 0.35);
+      border-radius: 6px;
+      background: rgba(10, 18, 32, 0.7);
+      color: #cfe0f2;
+      cursor: pointer;
+      font-size: 20px;
+      line-height: 1;
+    }
+
+    .data-panel-close:hover {
+      border-color: rgba(200, 225, 255, 0.7);
+      color: #ffffff;
+    }
+
+    .data-panel-body {
+      display: grid;
+      flex: 1 1 auto;
+      gap: 2vmin;
+      align-content: start;
+      padding: 2vmin 0 1vmin;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+    }
+
+    /* 面板里每一块内容都是一张深色卡片 */
+    .data-card {
+      border: 1px solid var(--line);
+      border-left: 0.5vmin solid rgba(78, 163, 224, 0.55);
+      border-radius: 4px;
+      padding: 2vmin;
+      background: var(--card);
+      backdrop-filter: blur(2px);
+    }
+
+    .data-card-title {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 1.6vmin;
+      margin: 0 0 1.6vmin;
+      color: #ffffff;
+      font-size: max(1.9vmin, 14px);
+      letter-spacing: 0.06em;
+    }
+
+    .data-card-title span {
+      color: var(--muted);
+      font-size: max(1.4vmin, 11px);
+      font-weight: 400;
+    }
+
+    /* ---------- 寻访结果网格（沿用原有 ID 与 class，只换深色皮肤） ---------- */
+    .result-area {
+      min-height: 18vmin;
+      border: 1px solid var(--line-soft);
+      border-radius: 4px;
+      padding: 1.6vmin;
+      background: rgba(6, 11, 21, 0.55);
+    }
+
+    .result-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+      gap: 10px;
+    }
+
+    .empty-state {
+      display: grid;
+      min-height: 12vmin;
+      place-items: center;
+      color: var(--muted);
+      font-size: max(1.5vmin, 12px);
+      text-align: center;
+    }
+
+    .result-card {
+      position: relative;
+      display: flex;
+      min-height: 120px;
+      flex-direction: column;
+      justify-content: space-between;
+      overflow: hidden;
+      border: 1px solid;
+      padding: 12px;
+      background: linear-gradient(165deg, #131d2f, #0b1220);
+      clip-path: polygon(0 8%, 7% 0, 100% 0, 100% 92%, 93% 100%, 0 100%);
+    }
+
+    .result-card::before {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 4px;
+      background: currentColor;
+      content: "";
+      opacity: 0.8;
+    }
+
+    .result-card.star-3 {
+      border-color: #33455e;
+      color: #93a8c2;
+    }
+
+    .result-card.star-4 {
+      border-color: #7a58b8;
+      color: #cbaef7;
+    }
+
+    .result-card.star-5 {
+      border-color: #c39a2c;
+      color: #ffd76a;
+    }
+
+    .result-card.star-6 {
+      border-color: #eb8427;
+      color: #ffb45e;
+      box-shadow: 0 0 0 2px rgba(235, 132, 39, 0.2);
+    }
+
+    .result-card.star-6.is-revealed {
+      animation: six-star-flash 1.7s ease-out 1 both;
+    }
+
+    @keyframes six-star-flash {
+      0% {
+        box-shadow: 0 0 0 0 rgba(235, 132, 39, 0.72);
+      }
+      55% {
+        box-shadow: 0 0 0 8px rgba(235, 132, 39, 0.08);
+      }
+      100% {
+        box-shadow: 0 0 0 2px rgba(235, 132, 39, 0.2);
+      }
+    }
+
+    /* ---------- 联动限定 结城理：深蓝 + 金渐变边框（保留原有手法） ---------- */
+    .result-card.collab-six {
+      border: 2px solid transparent;
+      background:
+        linear-gradient(150deg, #08132c 0%, #17306b 48%, #0b1732 100%)
+          padding-box,
+        linear-gradient(
+            135deg,
+            #fff3cd 0%,
+            #e8c46a 25%,
+            #a8802a 50%,
+            #ffeeb4 72%,
+            #d8ae4a 100%
+          )
+          border-box;
+      color: #ffe6a8;
+      box-shadow: 0 0 0 2px rgba(255, 214, 106, 0.3),
+        0 12px 28px rgba(0, 0, 0, 0.5);
+    }
+
+    .result-card.collab-six.is-revealed {
+      animation: collab-six-flash 1.9s ease-out 2 both;
+    }
+
+    @keyframes collab-six-flash {
+      0% {
+        box-shadow: 0 0 0 0 rgba(255, 214, 106, 0.85),
+          0 12px 28px rgba(0, 0, 0, 0.5);
+      }
+      60% {
+        box-shadow: 0 0 0 10px rgba(255, 214, 106, 0.06),
+          0 12px 28px rgba(0, 0, 0, 0.5);
+      }
+      100% {
+        box-shadow: 0 0 0 2px rgba(255, 214, 106, 0.3),
+          0 12px 28px rgba(0, 0, 0, 0.5);
+      }
+    }
+
+    .result-card.collab-six::before {
+      background: linear-gradient(90deg, #ffe9a8, #a8802a, #ffe9a8);
+      opacity: 1;
+    }
+
+    .result-card.collab-six .operator-name {
+      color: #fff6d8;
+      text-shadow: 0 0 12px rgba(255, 214, 106, 0.75);
+    }
+
+    .result-card.collab-six .card-number,
+    .result-card.collab-six .rarity-label {
+      color: #cbb478;
+    }
+
+    .result-card.collab-six .star-text {
+      color: #ffd76a;
+      text-shadow: 0 0 8px rgba(255, 214, 106, 0.6);
+    }
+
+    /* 联动 UP 5★：金色描边 */
+    .result-card.collab-up {
+      border: 2px solid transparent;
+      background:
+        linear-gradient(160deg, #241d10 0%, #1a1408 100%) padding-box,
+        linear-gradient(135deg, #ffe9a8, #c9982c 55%, #ffe9a8) border-box;
+      color: #ffd76a;
+    }
+
+    .result-card.collab-up .operator-name {
+      color: #ffe9b5;
+    }
+
+    /* 斜向扫光（纯 CSS 闪光） */
+    .shine {
+      position: absolute;
+      top: -60%;
+      left: -160%;
+      width: 55%;
+      height: 220%;
+      background: linear-gradient(
+        90deg,
+        transparent,
+        rgba(255, 255, 255, 0.6),
+        transparent
+      );
+      pointer-events: none;
+      transform: rotate(18deg);
+    }
+
+    /* 【动画层】扫光入场后开始，并且持续循环：
+       0~45% 完成一次从左到右的扫过，45%~100% 停在画面外（卡片看起来是静止的） */
+    .result-card.collab-six.is-revealed .shine {
+      animation: shine-sweep 3.2s ease-in-out infinite both;
+    }
+
+    @keyframes shine-sweep {
+      0% {
+        left: -160%;
+      }
+      45% {
+        left: 170%;
+      }
+      100% {
+        left: 170%;
+      }
+    }
+
+    /* 字符彩带（✦ ✧ ★ ☆），纯 CSS 动画 */
+    .confetti {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    .confetti span {
+      position: absolute;
+      top: -16px;
+      color: #ffe08a;
+      font-size: 12px;
+      opacity: 0;
+      text-shadow: 0 0 6px rgba(255, 214, 106, 0.9);
+    }
+
+    /* 【动画层】字符彩带同样等入场后再播 */
+    .result-card.collab-six.is-revealed .confetti span {
+      animation: confetti-fall 2s ease-in 2 both;
+    }
+
+    .confetti span:nth-child(1) { left: 6%; animation-delay: 0s; }
+    .confetti span:nth-child(2) { left: 18%; animation-delay: 0.22s; font-size: 10px; }
+    .confetti span:nth-child(3) { left: 30%; animation-delay: 0.44s; }
+    .confetti span:nth-child(4) { left: 42%; animation-delay: 0.12s; font-size: 14px; }
+    .confetti span:nth-child(5) { left: 54%; animation-delay: 0.6s; }
+    .confetti span:nth-child(6) { left: 66%; animation-delay: 0.3s; font-size: 10px; }
+    .confetti span:nth-child(7) { left: 78%; animation-delay: 0.72s; }
+
+    @keyframes confetti-fall {
+      0% {
+        opacity: 0;
+        transform: translateY(0) rotate(0deg);
+      }
+      18% {
+        opacity: 1;
+      }
+      100% {
+        opacity: 0;
+        transform: translateY(140px) rotate(230deg);
+      }
+    }
+
+    .card-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 12px;
+    }
+
+    .card-number {
+      color: inherit;
+      opacity: 0.68;
+    }
+
+    .star-text {
+      font-weight: 800;
+      white-space: nowrap;
+    }
+
+    .operator-name {
+      margin: 12px 0;
+      color: #f2f6fb;
+      font-size: 21px;
+      font-weight: 800;
+      line-height: 1.2;
+      overflow-wrap: anywhere;
+    }
+
+    .card-foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .rarity-label {
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .badge {
+      display: inline-block;
+      border-radius: 3px;
+      padding: 2px 7px;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      white-space: nowrap;
+    }
+
+    .badge-limited {
+      border: 1px solid rgba(255, 233, 168, 0.85);
+      background: linear-gradient(135deg, #17306b, #0a1732);
+      color: #ffe6a8;
+      box-shadow: 0 0 8px rgba(255, 214, 106, 0.35);
+    }
+
+    .badge-up {
+      border: 1px solid #d9b24c;
+      background: linear-gradient(135deg, #3a2f10, #57430f);
+      color: #ffdf95;
+    }
+
+    .badge-inline {
+      margin-left: 6px;
+      padding: 1px 5px;
+      font-size: 10px;
+    }
+
+    /* ---------- 统计 / 保底 / 历史 / 卡池详情 / 模拟（深色皮肤） ---------- */
+    .summary-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: var(--line-soft);
+    }
+
+    .metric {
+      min-height: 72px;
+      padding: 12px;
+      background: rgba(9, 15, 28, 0.9);
+    }
+
+    .metric span {
+      display: block;
+      margin-bottom: 6px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .metric strong {
+      color: #ffffff;
+      font-size: 22px;
+      line-height: 1;
+    }
+
+    .rate-list {
+      display: grid;
+      gap: 9px;
+      margin-top: 16px;
+    }
+
+    .rate-row {
+      display: grid;
+      grid-template-columns: 42px 1fr auto;
+      gap: 9px;
+      align-items: center;
+      font-size: 13px;
+    }
+
+    .rate-bar {
+      height: 7px;
+      overflow: hidden;
+      border-radius: 99px;
+      background: rgba(140, 175, 220, 0.16);
+    }
+
+    .rate-bar span {
+      display: block;
+      width: 0;
+      height: 100%;
+      background: #7fa6cc;
+      transition: width 180ms ease;
+    }
+
+    .rate-row.star-4 .rate-bar span {
+      background: #a887e0;
+    }
+
+    .rate-row.star-5 .rate-bar span {
+      background: #e0b23c;
+    }
+
+    .rate-row.star-6 .rate-bar span {
+      background: #ef8f34;
+    }
+
+    .rate-value {
+      min-width: 84px;
+      color: var(--muted);
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .pity-box {
+      margin-top: 16px;
+      border-top: 1px solid var(--line-soft);
+      padding-top: 14px;
+    }
+
+    .pity-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 8px;
+    }
+
+    .pity-head + .pity-head {
+      margin-top: 14px;
+    }
+
+    .pity-head span {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .pity-head strong {
+      color: #ffffff;
+      font-size: 19px;
+    }
+
+    .pity-track {
+      height: 9px;
+      overflow: hidden;
+      border-radius: 99px;
+      background: rgba(140, 175, 220, 0.16);
+    }
+
+    .pity-track span {
+      display: block;
+      width: 0;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #2f7fd0, #7fc0f5);
+      transition: width 180ms ease;
+    }
+
+    .pity-track.collab span {
+      background: linear-gradient(90deg, #1b3a7d, #e8c46a);
+    }
+
+    .pity-track.up5 span {
+      background: linear-gradient(90deg, #d9b24c, #b8860b);
+    }
+
+    .pity-note {
+      margin: 8px 0 0;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .collab-box {
+      margin-top: 14px;
+      border: 1px solid rgba(200, 170, 100, 0.35);
+      border-radius: 4px;
+      padding: 14px;
+      background: linear-gradient(170deg, rgba(38, 30, 12, 0.6), rgba(18, 16, 10, 0.7));
+    }
+
+    .sub-title {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+      margin: 0 0 12px;
+      color: #ffffff;
+      font-size: 14px;
+    }
+
+    .buff-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 14px;
+      border-top: 1px dashed rgba(200, 170, 100, 0.3);
+      padding-top: 12px;
+      font-size: 13px;
+    }
+
+    .buff-row span {
+      color: var(--muted);
+    }
+
+    .buff-row strong {
+      color: #ffe6a8;
+      font-size: 15px;
+    }
+
+    .up5-counts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px 18px;
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .up5-counts strong {
+      color: #ffffff;
+      font-size: 15px;
+    }
+
+    .history-section {
+      margin-top: 16px;
+      border-top: 1px solid var(--line-soft);
+      padding-top: 14px;
+    }
+
+    .history-head {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+    }
+
+    .history-head h3 {
+      margin: 0;
+      color: #ffffff;
+      font-size: 14px;
+    }
+
+    .history-head span {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .history-list {
+      display: grid;
+      max-height: 220px;
+      gap: 6px;
+      margin: 0;
+      padding: 0;
+      overflow-y: auto;
+      list-style: none;
+    }
+
+    .history-list li {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      border-bottom: 1px dashed var(--line-soft);
+      padding: 6px 0;
+      font-size: 13px;
+    }
+
+    .history-list li:last-child {
+      border-bottom: 0;
+    }
+
+    .history-draw {
+      flex: 0 0 auto;
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .history-name {
+      min-width: 0;
+      color: #ffc98a;
+      font-weight: 700;
+      overflow-wrap: anywhere;
+      text-align: right;
+    }
+
+    .history-name.collab-six {
+      color: #9fc9ff;
+    }
+
+    .history-empty {
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .pool-detail {
+      display: grid;
+      gap: 10px;
+    }
+
+    .pool-group {
+      border: 1px solid var(--line);
+      border-radius: 4px;
+      background: rgba(8, 14, 26, 0.7);
+    }
+
+    .pool-group > summary {
+      cursor: pointer;
+      padding: 10px 12px;
+      color: #dce7f4;
+      font-size: 13px;
+      font-weight: 700;
+      list-style: none;
+    }
+
+    .pool-group > summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .pool-group > summary::before {
+      margin-right: 7px;
+      color: var(--muted);
+      content: "▸";
+    }
+
+    .pool-group[open] > summary::before {
+      content: "▾";
+    }
+
+    .pool-group.star-6 > summary { color: #ffb45e; }
+    .pool-group.star-5 > summary { color: #ffd76a; }
+    .pool-group.star-4 > summary { color: #cbaef7; }
+    .pool-group.star-3 > summary { color: #9fb3c9; }
+
+    .pool-note {
+      margin: 0 12px 8px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .pool-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
+      gap: 4px 10px;
+      margin: 0;
+      padding: 0 12px 12px;
+      list-style: none;
+    }
+
+    .pool-item {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 6px;
+      border-bottom: 1px dotted var(--line-soft);
+      padding: 3px 0;
+      color: #cfdcec;
+      font-size: 12px;
+    }
+
+    .pool-item.up {
+      border-bottom-color: rgba(255, 214, 106, 0.35);
+    }
+
+    .pool-name {
+      min-width: 0;
+      overflow-wrap: anywhere;
+    }
+
+    .pool-rate {
+      flex: 0 0 auto;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* 注意：.pool-list 里的 .pool-name 与主界面标题 .pool-name 同名，
+       这里靠层级区分——主界面标题是 h1.pool-name，列表项是 li 内的 span */
+    .pool-list .pool-name {
+      margin: 0;
+      color: #dce7f4;
+      font-size: 12px;
+      font-weight: 700;
+      text-shadow: none;
+    }
+
+    .simulation-output {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .table-scroll {
+      overflow-x: auto;
+    }
+
+    .sim-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .sim-table th,
+    .sim-table td {
+      border-bottom: 1px solid var(--line-soft);
+      padding: 8px 6px;
+      text-align: right;
+      color: #cfdcec;
+    }
+
+    .sim-table th:first-child,
+    .sim-table td:first-child {
+      text-align: left;
+    }
+
+    .sim-table th {
+      color: var(--muted);
+      font-weight: 700;
+    }
+
+    .sim-average {
+      margin: 12px 0 0;
+      color: var(--ink);
+      font-size: 12px;
+      line-height: 1.7;
+    }
+
+    .sim-notes {
+      display: grid;
+      gap: 5px;
+      margin: 12px 0 0;
+      padding-left: 18px;
+      color: var(--ink);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+
+    /* 通用按钮（面板里的模拟 / 重置） */
+    .btn {
+      min-height: 42px;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      padding: 10px 16px;
+      cursor: pointer;
+      font-weight: 700;
+      transition: filter 120ms ease, transform 120ms ease;
+    }
+
+    .btn:hover {
+      filter: brightness(1.12);
+      transform: translateY(-1px);
+    }
+
+    .btn:active {
+      transform: translateY(0);
+    }
+
+    .btn:focus-visible {
+      outline: 3px solid rgba(120, 180, 240, 0.35);
+      outline-offset: 2px;
+    }
+
+    .btn:disabled {
+      cursor: wait;
+      opacity: 0.6;
+      transform: none;
+    }
+
+    .btn-secondary {
+      border-color: rgba(160, 200, 240, 0.4);
+      background: rgba(14, 24, 42, 0.85);
+      color: #e8eef6;
+    }
+
+    .btn-danger {
+      border-color: rgba(224, 117, 117, 0.5);
+      background: rgba(48, 16, 20, 0.7);
+      color: #ffb0b0;
+    }
+
+    .simulation-panel .btn {
+      width: 100%;
+      margin-bottom: 14px;
+    }
+
+    .reset-panel {
+      padding: 0;
+    }
+
+    .reset-panel .btn {
+      width: 100%;
+    }
+
+    .foot-note {
+      margin: 0;
+      color: var(--muted);
+      font-size: max(1.3vmin, 11px);
+      line-height: 1.8;
+    }
+
+    .foot-note code {
+      color: #ffd76a;
+    }
+
+    /* ==================================================================
+       【动画层 · 寻访动画】行李袋寻访（拖拽开启 + 黑场转场 + 干员展示）
+       ------------------------------------------------------------------
+       分镜（阶段类由 JS 加在 .scout-overlay 上）：
+         阶段一 is-on         约 500ms  幕布淡入 + 袋子从下方升起 + 拖拽提示
+         阶段二 is-dragging   玩家拖拽  拉链头随手拖动、缝口张开、漏光变强、火星喷溅
+         阶段三 is-bursting   约 400ms  白光从缝口炸开 + 两档屏幕震动
+         阶段四 is-file       自动      深色档案袋从包口滑出并停留
+         阶段五 is-darkening  约 900ms  整幕均匀压暗到纯黑，档案袋边淡出边推向镜头
+         阶段六 is-showing    玩家控制  从黑场中浮现干员名、星数与氛围光
+         收尾   is-leaving             展示淡出，干员网格整体显示
+       --pull（0~1）由 JS 用 rAF 写在这一层上，驱动拉链头位置、缝口张开与漏光强度。
+       全部视觉元素都是渐变 / 边框 / clip-path 画的，没有任何图片素材。
+       ================================================================== */
+
+    .scout-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 9000;
+      overflow: hidden;
+      visibility: hidden;
+      pointer-events: none;
+    }
+
+    /* 深灰渐变幕布：中央亮、四周暗（仿截图里的地板与背景） */
+    .scout-overlay::before {
+      position: absolute;
+      inset: 0;
+      background: radial-gradient(
+        118% 92% at 50% 46%,
+        #7f858b 0%,
+        #5b6066 17%,
+        #35393d 45%,
+        #171a1c 74%,
+        #060708 100%
+      );
+      content: "";
+      opacity: 0;
+      transition: opacity 300ms ease-out;
+    }
+
+    .scout-overlay.is-on {
+      visibility: visible;
+      pointer-events: auto;
+    }
+
+    .scout-overlay.is-on::before {
+      opacity: 1;
+    }
+
+    /* ---------- 散落的 "+" 记号（两个伪元素拼成十字，纯 CSS） ---------- */
+    .scout-marks {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      transition: opacity 420ms ease-out;
+    }
+
+    .scout-overlay.is-on .scout-marks {
+      opacity: 1;
+    }
+
+    .scout-mark {
+      position: absolute;
+      width: 4vmin;
+      height: 4vmin;
+    }
+
+    .scout-mark::before,
+    .scout-mark::after {
+      position: absolute;
+      background: #e8edf1;
+      content: "";
+      opacity: 0.26;
+    }
+
+    .scout-mark::before {
+      top: 50%;
+      left: 0;
+      width: 100%;
+      height: 0.22vmin;
+      transform: translateY(-50%);
+    }
+
+    .scout-mark::after {
+      left: 50%;
+      top: 0;
+      width: 0.22vmin;
+      height: 100%;
+      transform: translateX(-50%);
+    }
+
+    .scout-mark:nth-child(1) {
+      left: 9%;
+      top: 20%;
+    }
+
+    .scout-mark:nth-child(2) {
+      left: 85%;
+      top: 15%;
+      width: 3vmin;
+      height: 3vmin;
+    }
+
+    .scout-mark:nth-child(3) {
+      left: 14%;
+      top: 76%;
+      width: 3.2vmin;
+      height: 3.2vmin;
+    }
+
+    /* ---------- 相机层：标记 / 体积光 / 舞台（袋子、光、档案袋）都装在里面 ----------
+       震动只加在这一层上，所以整幅画面作为「一个镜头」一起动，内部没有任何相对位移。
+       注意：camera 层在 fixed 遮罩内部，body 上不允许有任何 transform
+       （否则 fixed 定位的基准会被破坏）。 */
+    .scout-camera {
+      position: absolute;
+      inset: 0;
+      transform-origin: 50% 50%;
+    }
+
+    /* 仅 6★ 拉到底时触发：一次「闷响式」的整体冲击 + 阻尼回落，
+       首尾完全归零，内部没有任何相对位移 */
+    .scout-camera.is-impact {
+      animation: camera-impact 600ms ease-out 1 both;
+    }
+
+    @keyframes camera-impact {
+      0% {
+        transform: scale(1) translateY(0) rotate(0deg);
+      }
+      14% {
+        transform: scale(1.042) translateY(-0.6vmin) rotate(-0.28deg);
+      }
+      32% {
+        transform: scale(0.983) translateY(0.45vmin) rotate(0.22deg);
+      }
+      52% {
+        transform: scale(1.016) translateY(-0.24vmin) rotate(-0.1deg);
+      }
+      72% {
+        transform: scale(0.994) translateY(0.12vmin) rotate(0deg);
+      }
+      88% {
+        transform: scale(1.004) translateY(-0.05vmin) rotate(0deg);
+      }
+      100% {
+        transform: scale(1) translateY(0) rotate(0deg);
+      }
+    }
+
+    /* ---------- 右上角斜向体积光（渐变 + clip-path 裁成光锥） ---------- */
+    .scout-beam {
+      position: absolute;
+      top: -20%;
+      right: -8%;
+      width: 46vmin;
+      height: 82vmin;
+      background: linear-gradient(
+        196deg,
+        rgba(255, 255, 255, 0.38) 0%,
+        rgba(255, 255, 255, 0.15) 34%,
+        rgba(255, 255, 255, 0) 70%
+      );
+      clip-path: polygon(46% 0%, 100% 0%, 58% 100%, 18% 100%);
+      filter: blur(1.6vmin);
+      opacity: 0;
+      transform: rotate(14deg);
+      transition: opacity 520ms ease-out 140ms;
+    }
+
+    .scout-overlay.is-on .scout-beam {
+      opacity: 0.76;
+    }
+
+    /* ---------- 舞台：袋子、光、黑幕、档案袋都放在这一层 ---------- */
+    .scout-scene {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      transition: opacity 260ms ease-out;
+    }
+
+    .scout-overlay.is-on .scout-scene {
+      opacity: 1;
+    }
+
+    /* 袋子在灰色地板上的投影（跟着袋子一起放大并下移） */
+    .scout-scene::before {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 96vmin;
+      height: 19vmin;
+      margin: 10vmin 0 0 -48vmin;
+      border-radius: 50%;
+      background: radial-gradient(
+        closest-side,
+        rgba(0, 0, 0, 0.72),
+        rgba(0, 0, 0, 0) 78%
+      );
+      content: "";
+      filter: blur(1.4vmin);
+    }
+
+    /* ---------- 行李袋：圆角矩形 + 多层径向渐变模拟皮革 ----------
+       结构分两层，这是「位置全程稳定」的关键：
+         .scout-bag        外层：只负责定位和整体透明度（transform 全程保持 identity）
+         .scout-bag-inner  内层：登场 / 呼吸浮动 / 蓄力晃动全部在内层播放
+       这样各阶段切换动画时，只有内层在动，外层位置不会被重置，
+       也就不会出现「元素回落到静态基准位置」的跳变。 */
+    .scout-bag {
+      --bag-w: min(84vmin, 94vw);
+      --bag-h: min(47vmin, 53vw);
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: var(--bag-w);
+      height: var(--bag-h);
+      margin-top: calc(var(--bag-h) / -2);
+      margin-left: calc(var(--bag-w) / -2);
+      /* 外层永远是 identity：任何阶段类都不许改这里的 transform */
+      transform: none;
+      opacity: 0;
+      /* 拖拽时不要触发浏览器的滚动 / 缩放手势 */
+      touch-action: none;
+    }
+
+    /* 内层：所有会动的部分（皮革、拉链、字样、缝线、提手）都在这一层里 */
+    .scout-bag-inner {
+      position: absolute;
+      inset: 0;
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 11vmin 11vmin 8vmin 8vmin / 8vmin 8vmin 6vmin 6vmin;
+      background:
+        radial-gradient(58% 62% at 27% 16%, rgba(255, 255, 255, 0.17),
+          rgba(255, 255, 255, 0) 62%),
+        radial-gradient(40% 48% at 71% 10%, rgba(255, 255, 255, 0.11),
+          rgba(255, 255, 255, 0) 68%),
+        radial-gradient(86% 76% at 50% 116%, rgba(0, 0, 0, 0.88),
+          rgba(0, 0, 0, 0) 72%),
+        linear-gradient(166deg, #3a3e43 0%, #23262a 34%, #141618 66%, #08090b 100%);
+      box-shadow:
+        inset 0 0.5vmin 0 rgba(255, 255, 255, 0.14),
+        inset 0 -2.4vmin 4.5vmin rgba(0, 0, 0, 0.62),
+        0 3.2vmin 6vmin rgba(0, 0, 0, 0.6);
+      /* 基准帧就是 translateY(0)：浮动动画被移除时正好落回基准，不会跳 */
+      transform: translateY(0) scale(1);
+    }
+
+    .scout-overlay.is-on .scout-bag {
+      opacity: 1;
+    }
+
+    /* 阶段一：从下方 6vmin 升起 + scale 0.92 → 1 + 淡入，带一点回弹（都在内层）。
+       只作用于「还没进入 floating」的登场阶段 */
+    .scout-overlay.is-on .scout-bag:not(.is-floating) .scout-bag-inner {
+      animation: bag-enter 500ms cubic-bezier(0.22, 1.2, 0.36, 1) 1 both,
+        bag-float 3.2s ease-in-out 500ms infinite;
+    }
+
+    /* 登场播完（JS 在 bagReady = true 的同一时刻加 .is-floating）：
+       内层动画只剩呼吸浮动，不再包含 bag-enter。
+       袋子全程只有「升起 + 缓慢呼吸浮动」两种动画，任何情况下都不再震。 */
+    .scout-overlay.is-on .scout-bag.is-floating .scout-bag-inner {
+      animation: bag-float 3.2s ease-in-out infinite;
+    }
+
+    @keyframes bag-enter {
+      0% {
+        opacity: 0;
+        transform: translateY(6vmin) scale(0.92);
+      }
+      100% {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+    }
+
+    /* 登场后的呼吸浮动（缓慢漂浮，不是震动） */
+    @keyframes bag-float {
+      0%,
+      100% {
+        transform: translate(0, 0) scale(1);
+      }
+      50% {
+        transform: translate(0, -1.1vmin) scale(1);
+      }
+    }
+
+    /* 袋身下半部分的缝线与压暗 */
+    .scout-bag-inner::before {
+      position: absolute;
+      left: 3%;
+      right: 3%;
+      top: 58%;
+      height: 34%;
+      border-top: 0.25vmin solid rgba(255, 255, 255, 0.07);
+      border-radius: 0 0 8vmin 8vmin / 0 0 6vmin 6vmin;
+      background: linear-gradient(
+        180deg,
+        rgba(255, 255, 255, 0.05),
+        rgba(0, 0, 0, 0.35)
+      );
+      content: "";
+    }
+
+    /* 顶部提手：用带圆角的边框画一个弧形 */
+    .scout-bag-inner::after {
+      position: absolute;
+      left: 31%;
+      right: 31%;
+      top: -6.4vmin;
+      height: 6.8vmin;
+      border: 1.3vmin solid #202327;
+      border-bottom: 0;
+      border-radius: 4.2vmin 4.2vmin 0 0;
+      box-shadow: inset 0 0.3vmin 0.6vmin rgba(255, 255, 255, 0.12);
+      content: "";
+    }
+
+    /* 袋身白色粗体字样（纯文本：两行用 white-space: pre-line 换行） */
+    .scout-bag-label {
+      position: absolute;
+      right: 9%;
+      bottom: 24%;
+      margin: 0;
+      color: #f0f3f6;
+      font-size: max(2.6vmin, 14px);
+      font-weight: 800;
+      letter-spacing: 0.16em;
+      line-height: 1.02;
+      opacity: 0.92;
+      text-align: right;
+      text-shadow: 0 0 0.8vmin rgba(0, 0, 0, 0.7);
+      white-space: pre-line;
+    }
+
+    /* 字样左边的小方块标志（重复渐变画三条竖杠） */
+    .scout-bag-label::before {
+      position: absolute;
+      left: -3.6vmin;
+      bottom: 0.2vmin;
+      width: 2.6vmin;
+      height: 4.2vmin;
+      background: repeating-linear-gradient(
+        90deg,
+        rgba(240, 243, 246, 0.92) 0 0.45vmin,
+        rgba(240, 243, 246, 0) 0.45vmin 0.85vmin
+      );
+      content: "";
+    }
+
+    /* ---------- 斜向拉链轨道：右上 → 左下微斜约 -10° ---------- */
+    .scout-zip {
+      position: absolute;
+      left: 6%;
+      right: 6%;
+      top: 36%;
+      height: 0.3vmin;
+      border-top: 0.28vmin dashed rgba(226, 233, 239, 0.5);
+      background: repeating-linear-gradient(
+        90deg,
+        rgba(232, 238, 244, 0.8) 0 0.24vmin,
+        rgba(70, 74, 80, 0.28) 0.24vmin 0.6vmin
+      );
+      transform: rotate(-10deg);
+    }
+
+    /* 拉链缝隙：张开程度与亮度都由 --pull 驱动 */
+    .scout-seam {
+      position: absolute;
+      left: 5%;
+      right: 5%;
+      top: 0.28vmin;
+      height: calc(var(--pull, 0) * 2.2vmin);
+      border-radius: 99px;
+      background: linear-gradient(
+        90deg,
+        rgba(255, 255, 255, 0),
+        var(--leak, #e8ecef),
+        rgba(255, 255, 255, 0)
+      );
+      box-shadow: 0 0 2.8vmin 0.6vmin var(--leak-soft, rgba(232, 236, 239, 0.5));
+      opacity: calc(0.12 + var(--pull, 0) * 0.88);
+    }
+
+    /* 6★：缝口本身也在流动金光，像拉开的口子里一直有金色光在涌动 */
+    .scout-overlay.leak-6 .scout-seam {
+      background: linear-gradient(
+        90deg,
+        rgba(255, 255, 255, 0) 0%,
+        #ffe9a8 22%,
+        #fff8e2 40%,
+        #ffce6a 58%,
+        #fff3cc 76%,
+        rgba(255, 255, 255, 0) 100%
+      );
+      background-size: 280% 100%;
+      box-shadow: 0 0 4vmin 1vmin rgba(255, 206, 106, 0.55);
+      animation: gold-flow 1800ms linear infinite;
+    }
+
+    /* 阶段三：爆发瞬间缝口撑到最大 */
+    .scout-overlay.is-bursting .scout-seam {
+      height: 2.6vmin;
+      opacity: 1;
+      transition: height 180ms ease-out, opacity 180ms ease-out;
+    }
+
+    /* 拉链头：金属拉环，从右端推向左侧 */
+    .scout-pull {
+      position: absolute;
+      left: calc(88% - var(--pull, 0) * 80%);
+      top: -1.9vmin;
+      width: 3.2vmin;
+      height: 3.9vmin;
+      border-radius: 0.7vmin;
+      background: linear-gradient(
+        160deg,
+        #cfd6dc 0%,
+        #8d959c 38%,
+        #565c62 70%,
+        #2b2f33 100%
+      );
+      box-shadow: 0 0.3vmin 0.9vmin rgba(0, 0, 0, 0.55),
+        inset 0 0.2vmin 0 rgba(255, 255, 255, 0.5);
+    }
+
+    .scout-pull::after {
+      position: absolute;
+      left: 50%;
+      top: 100%;
+      width: 1.2vmin;
+      height: 1.7vmin;
+      margin-left: -0.6vmin;
+      border: 0.24vmin solid #b9c1c8;
+      border-top: 0;
+      border-radius: 0 0 0.5vmin 0.5vmin;
+      content: "";
+    }
+
+    /* ---------- 火星粒子池：由 JS 在拉动时不断从拉链头位置"点亮" ---------- */
+    .scout-sparks {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+    }
+
+    .scout-spark {
+      position: absolute;
+      width: 0.32vmin;
+      height: 1.7vmin;
+      margin: -0.85vmin 0 0 -0.16vmin;
+      border-radius: 99px;
+      background: linear-gradient(
+        180deg,
+        #fff6d6 0%,
+        #ffc14a 40%,
+        #ff7a1a 72%,
+        rgba(255, 110, 20, 0) 100%
+      );
+      box-shadow: 0 0 0.9vmin rgba(255, 170, 60, 0.9);
+      opacity: 0;
+    }
+
+    /* is-live 由 JS 加上：每次加上都从头播一次火星飞溅动画 */
+    .scout-spark.is-live {
+      animation: spark-fly 620ms ease-out 1 both;
+    }
+
+    /* --dx 向右飞、--up 先上升、--down 再落下，三段模拟抛物线 */
+    @keyframes spark-fly {
+      0% {
+        opacity: 0;
+        transform: translate3d(0, 0, 0) scaleY(0.5);
+      }
+      12% {
+        opacity: 1;
+      }
+      45% {
+        opacity: 1;
+        transform: translate3d(calc(var(--dx, 0vmin) * 0.62),
+          calc(var(--up, 4vmin) * -1), 0) scaleY(1);
+      }
+      100% {
+        opacity: 0;
+        transform: translate3d(var(--dx, 0vmin), var(--down, 3vmin), 0)
+          scaleY(0.7);
+      }
+    }
+
+    /* ---------- 漏光：颜色由本批最高星级决定（JS 加 leak-3/4/5/6） ---------- */
+    .scout-overlay.leak-3 {
+      --leak: #e8ecef;
+      --leak-soft: rgba(232, 236, 239, 0.5);
+    }
+
+    .scout-overlay.leak-4 {
+      --leak: #a06be8;
+      --leak-soft: rgba(160, 107, 232, 0.5);
+    }
+
+    .scout-overlay.leak-5 {
+      --leak: #ffce6a;
+      --leak-soft: rgba(255, 206, 106, 0.5);
+    }
+
+    .scout-overlay.leak-6 {
+      --leak: #ffce6a;
+      --leak-soft: rgba(255, 214, 106, 0.62);
+    }
+
+    /* 拉动阶段的光效只剩两样：缝口本身的张开发光（见 .scout-seam，
+       6★ 带流动金光）与从拉链头喷出的火星粒子。这里不再有任何椭圆光圈。 */
+
+    /* 缝口金光的流动：background-position 从 0 走到一整个图块宽度，循环无缝 */
+    @keyframes gold-flow {
+      from {
+        background-position: 0% 50%;
+      }
+      to {
+        background-position: 280% 50%;
+      }
+    }
+
+    /* 阶段三：爆发时光束从袋身正中央炸开 */
+
+    /* ---------- 袋心爆发：低星是柔和光晕，6★ 是放射状金色光束 ----------
+       拉到底约 120ms 后从袋子正中央炸开；位置固定在袋身中央，不跟随拉链头。 */
+    .scout-core-light {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 56vmin;
+      height: 56vmin;
+      margin: -28vmin 0 0 -28vmin;
+      opacity: 0;
+      scale: 0.06;
+      pointer-events: none;
+    }
+
+    /* 所有星级统一：一圈柔和的径向渐变光晕（中心亮、向外柔和衰减）。
+       没有光线、没有旋转、没有亮核光斑，6★ 只是金色的、稍亮稍大。 */
+    .scout-core-light {
+      border-radius: 50%;
+      background: radial-gradient(
+        closest-side,
+        #ffffff 0%,
+        var(--leak, #e8ecef) 32%,
+        var(--leak-soft, rgba(232, 236, 239, 0.5)) 58%,
+        rgba(255, 255, 255, 0) 100%
+      );
+      filter: blur(2.4vmin);
+    }
+
+    /* 拉到底后约 120ms，用 120ms 从中心绽放到峰值，之后保持柔和状态 */
+    .scout-overlay.is-bursting .scout-core-light {
+      animation: core-burst 120ms cubic-bezier(0.12, 0.9, 0.25, 1) 120ms 1 both;
+    }
+
+    @keyframes core-burst {
+      0% {
+        opacity: 0;
+        scale: 0.06;
+      }
+      60% {
+        opacity: 1;
+        scale: 1.08;
+      }
+      100% {
+        opacity: 1;
+        scale: 1;
+      }
+    }
+
+    /* 6★：同样的柔和光晕，只是金色、稍亮稍大 */
+    .scout-overlay.leak-6 .scout-core-light {
+      background: radial-gradient(
+        closest-side,
+        #fff8e2 0%,
+        #ffce6a 34%,
+        rgba(255, 206, 106, 0.5) 62%,
+        rgba(255, 190, 60, 0) 100%
+      );
+      filter: blur(2.8vmin) brightness(1.15);
+    }
+
+    /* ---------- 扇形光柱：袋心光之后从缝口向后喷射（和档案袋一起打光） ---------- */
+    .scout-shaft {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 108vmin;
+      height: 70vmin;
+      margin: -76vmin 0 0 -54vmin;
+      background: linear-gradient(
+        to top,
+        var(--leak, #e8ecef) 0%,
+        var(--leak-soft, rgba(232, 236, 239, 0.45)) 26%,
+        rgba(255, 255, 255, 0.06) 62%,
+        rgba(255, 255, 255, 0) 100%
+      );
+      clip-path: polygon(50% 100%, 4% 0%, 96% 0%);
+      filter: blur(1.8vmin);
+      opacity: 0;
+      transform: scale(0.25);
+      transform-origin: 50% 100%;
+    }
+
+    /* 和白光同一时刻张开（延迟 550ms） */
+    .scout-overlay.is-bursting .scout-shaft {
+      animation: shaft-open 1100ms ease-out 550ms 1 both;
+    }
+
+    @keyframes shaft-open {
+      0% {
+        opacity: 0;
+        transform: scale(0.2);
+      }
+      16% {
+        opacity: 0.95;
+        transform: scale(1);
+      }
+      70% {
+        opacity: 0.7;
+        transform: scale(1.05);
+      }
+      100% {
+        opacity: 0.45;
+        transform: scale(1.1);
+      }
+    }
+
+    /* ---------- 阶段三：光晕峰值时白光快速过一帧（150ms 衔接，不是闪屏切换） ---------- */
+    .scout-flash {
+      position: absolute;
+      left: 50%;
+      top: 45%;
+      width: 150vmax;
+      height: 150vmax;
+      margin: -75vmax 0 0 -75vmax;
+      border-radius: 50%;
+      background: radial-gradient(
+        circle,
+        #ffffff 0%,
+        #ffffff 42%,
+        rgba(255, 255, 255, 0.8) 58%,
+        rgba(255, 255, 255, 0) 76%
+      );
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .scout-overlay.is-bursting .scout-flash {
+      animation: flash-burst 150ms ease-out 550ms 1 both;
+    }
+
+    @keyframes flash-burst {
+      0% {
+        opacity: 0;
+        transform: scale(0.06);
+      }
+      35% {
+        opacity: 1;
+        transform: scale(0.5);
+      }
+      100% {
+        opacity: 0;
+        transform: scale(1);
+      }
+    }
+
+    /* ---------- 阶段四：深色档案袋从包口滑出 ---------- */
+    .scout-file {
+      position: absolute;
+      left: 50%;
+      top: 46%;
+      width: 26vmin;
+      height: 34vmin;
+      margin: -17vmin 0 0 -13vmin;
+      border-radius: 0.9vmin;
+      background:
+        linear-gradient(155deg, rgba(255, 255, 255, 0.1),
+          rgba(255, 255, 255, 0) 42%),
+        linear-gradient(168deg, #232c3d 0%, #161d2b 42%, #0c1119 78%, #070a10 100%);
+      box-shadow: 0 2vmin 4vmin rgba(0, 0, 0, 0.6),
+        inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+      opacity: 0;
+      transform: translateY(9vmin) rotate(-9deg) scale(0.78);
+    }
+
+    .scout-overlay.is-file .scout-file {
+      animation: file-out 650ms cubic-bezier(0.22, 0.75, 0.28, 1) 1 both;
+    }
+
+    /* 滑出时轻微旋转 + 放大，做出「向镜头靠近」的感觉 */
+    @keyframes file-out {
+      0% {
+        opacity: 0;
+        transform: translateY(9vmin) rotate(-9deg) scale(0.78);
+      }
+      20% {
+        opacity: 1;
+      }
+      100% {
+        opacity: 1;
+        transform: translateY(-7vmin) rotate(2.5deg) scale(1.06);
+      }
+    }
+
+    /* 白色三角标：外层白三角 + 内层深色三角 = 描边效果（纯 border 画法） */
+    .scout-file-logo {
+      position: absolute;
+      left: 50%;
+      top: 30%;
+      width: 0;
+      height: 0;
+      margin-left: -4.8vmin;
+      border-left: 4.8vmin solid transparent;
+      border-right: 4.8vmin solid transparent;
+      border-bottom: 8.1vmin solid #eef2f6;
+    }
+
+    .scout-file-logo::after {
+      position: absolute;
+      left: -4.15vmin;
+      top: 0.95vmin;
+      width: 0;
+      height: 0;
+      border-left: 4.15vmin solid transparent;
+      border-right: 4.15vmin solid transparent;
+      border-bottom: 6.9vmin solid #1b2434;
+      content: "";
+    }
+
+    /* 档案袋侧边的蓝色小标签 */
+    .scout-file-tab {
+      position: absolute;
+      right: -1.5vmin;
+      top: 18%;
+      width: 1.7vmin;
+      height: 8.6vmin;
+      border-radius: 0 0.4vmin 0.4vmin 0;
+      background: linear-gradient(180deg, #4aa3e0, #1f6fb2);
+      box-shadow: 0 0 1.4vmin rgba(74, 163, 224, 0.65);
+    }
+
+    .scout-file-text {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 20%;
+      margin: 0;
+      color: #dfe6ee;
+      font-size: max(1.1vmin, 10px);
+      font-weight: 700;
+      letter-spacing: 0.3em;
+      text-align: center;
+      opacity: 0.85;
+    }
+
+    /* ---------- 阶段五：均匀压暗的黑幕 ----------
+       它排在档案袋下面：袋子、光柱、记号先淡出，档案袋则在黑幕之上
+       边淡出边向镜头推近，最后被纯黑吞没（全程没有任何白光闪屏） */
+    .scout-veil {
+      position: absolute;
+      inset: 0;
+      background: #000000;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .scout-overlay.is-darkening .scout-veil {
+      animation: veil-in 900ms ease-in 1 both;
+    }
+
+    @keyframes veil-in {
+      from {
+        opacity: 0;
+      }
+      to {
+        opacity: 1;
+      }
+    }
+
+    /* 一起淡出：幕布背景、记号、体积光、光团、火星（袋子单独走下面的动画） */
+    .scout-overlay.is-darkening::before {
+      opacity: 0;
+      transition: opacity 700ms ease-in;
+    }
+
+    .scout-overlay.is-darkening .scout-marks,
+    .scout-overlay.is-darkening .scout-beam,
+    .scout-overlay.is-darkening .scout-core-light,
+    .scout-overlay.is-darkening .scout-sparks {
+      opacity: 0;
+      transition: opacity 700ms ease-in;
+    }
+
+    /* 袋子淡出只动外层的 opacity，绝不碰 transform：
+       内层的呼吸浮动继续跑，所以袋子位置不会在这里跳一下 */
+    .scout-overlay.is-darkening .scout-bag {
+      animation: bag-fade-out 700ms ease-in 1 both;
+    }
+
+    @keyframes bag-fade-out {
+      from {
+        opacity: 1;
+      }
+      to {
+        opacity: 0;
+      }
+    }
+
+    .scout-overlay.is-darkening .scout-shaft {
+      animation: shaft-fade-out 700ms ease-in 1 both;
+    }
+
+    @keyframes shaft-fade-out {
+      from {
+        opacity: 0.45;
+      }
+      to {
+        opacity: 0;
+      }
+    }
+
+    /* 唯独档案袋：边淡出边向镜头靠近放大 1.15 倍 */
+    .scout-overlay.is-darkening .scout-file {
+      animation: file-into-dark 900ms ease-in 1 both;
+    }
+
+    @keyframes file-into-dark {
+      0% {
+        opacity: 1;
+        transform: translateY(-7vmin) rotate(2.5deg) scale(1.06);
+      }
+      100% {
+        opacity: 0;
+        transform: translateY(-11vmin) rotate(0deg) scale(1.15);
+      }
+    }
+
+    /* ---------- 阶段六：从黑场中浮现干员 ---------- */
+    .scout-showcase {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1.6vmin;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .scout-showcase.is-showing {
+      opacity: 1;
+    }
+
+    /* 文字层压在氛围光上面 */
+    .scout-showcase > .scout-show-counter,
+    .scout-showcase > .scout-show-name,
+    .scout-showcase > .scout-show-stars,
+    .scout-showcase > .scout-show-hint {
+      position: relative;
+      z-index: 1;
+    }
+
+    /* 各星级配色档：星色 / 辉光 / 氛围光透明度区间 */
+    .scout-showcase.show-3 {
+      --star: #eef2f5;
+      --star-glow: rgba(232, 236, 239, 0.5);
+      --halo: rgba(232, 236, 239, 0.9);
+      --halo-min: 0.18;
+      --halo-max: 0.3;
+    }
+
+    .scout-showcase.show-4 {
+      --star: #b98cf0;
+      --star-glow: rgba(160, 107, 232, 0.6);
+      --halo: rgba(160, 107, 232, 0.95);
+      --halo-min: 0.3;
+      --halo-max: 0.45;
+    }
+
+    .scout-showcase.show-5 {
+      --star: #ffce6a;
+      --star-glow: rgba(255, 206, 106, 0.6);
+      --halo: rgba(255, 206, 106, 0.95);
+      --halo-min: 0.22;
+      --halo-max: 0.38;
+    }
+
+    .scout-showcase.show-6 {
+      --star: #ffd76a;
+      --star-glow: rgba(255, 214, 106, 0.85);
+      --halo: rgba(255, 214, 106, 1);
+      --halo-min: 0.5;
+      --halo-max: 0.72;
+    }
+
+    /* 氛围光：径向渐变大光晕，按星级呼吸（范围放得很大，几乎铺满屏幕） */
+    .scout-show-glow {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 165vmin;
+      height: 125vmin;
+      margin: -62.5vmin 0 0 -82.5vmin;
+      border-radius: 50%;
+      background: radial-gradient(
+        closest-side,
+        var(--halo, rgba(255, 255, 255, 0.6)),
+        rgba(255, 255, 255, 0) 72%
+      );
+      filter: blur(2vmin);
+      opacity: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .scout-showcase.is-showing .scout-show-glow {
+      animation: halo-breathe 2500ms ease-in-out infinite;
+    }
+
+    @keyframes halo-breathe {
+      0%,
+      100% {
+        opacity: var(--halo-min, 0.2);
+      }
+      50% {
+        opacity: var(--halo-max, 0.32);
+      }
+    }
+
+    /* 5★：与 3★/4★ 完全相同的结构，只是颜色是金色、亮度居中偏暗 */
+    /* 6★：同样的径向呼吸光，但明显更亮（缓慢庄重，2.5s 一轮） */
+
+    /* ---------- 6★ 专属：飘落金星层 ----------
+       10 个金色 "✦" 从屏幕上方匀速落到下方，各自时长/相位不同，
+       整体大约每秒至多一颗，安静地飘。位置与时长由 JS 在初始化时写进 CSS 变量。 */
+    .scout-fall-stars {
+      position: absolute;
+      left: var(--x, 50%);
+      top: -6vh;
+      color: #ffd76a;
+      font-size: var(--size, 1.6vmin);
+      line-height: 1;
+      opacity: 0;
+      pointer-events: none;
+      text-shadow: 0 0 1.2vmin rgba(255, 206, 106, 0.85);
+      z-index: 0;
+    }
+
+    .scout-showcase.show-6.is-showing .scout-fall-stars {
+      animation: star-fall var(--dur, 9s) linear var(--delay, 0s) infinite;
+    }
+
+    @keyframes star-fall {
+      0% {
+        opacity: 0;
+        transform: translateY(0) rotate(0deg);
+      }
+      15% {
+        opacity: 0.9;
+      }
+      85% {
+        opacity: 0.85;
+      }
+      100% {
+        opacity: 0;
+        transform: translateY(112vh) rotate(200deg);
+      }
+    }
+
+    /* ---------- 6★ 专属：背景点缀星层 ----------
+       14 个更小的金星点散布在四周（避开正中央的名字），各自独立呼吸闪烁。 */
+    .scout-twinkle {
+      position: absolute;
+      left: var(--x, 50%);
+      top: var(--y, 50%);
+      color: #ffdf95;
+      font-size: var(--size, 1.2vmin);
+      line-height: 1;
+      opacity: 0;
+      pointer-events: none;
+      text-shadow: 0 0 1vmin rgba(255, 206, 106, 0.75);
+      z-index: 0;
+    }
+
+    .scout-showcase.show-6.is-showing .scout-twinkle {
+      animation: star-twinkle var(--dur, 3s) ease-in-out var(--delay, 0s) infinite;
+    }
+
+    @keyframes star-twinkle {
+      0%,
+      100% {
+        opacity: 0.12;
+      }
+      50% {
+        opacity: 0.65;
+      }
+    }
+
+    /* 「第 N / 10 抽」小字（单抽时整行隐藏） */
+    .scout-show-counter {
+      margin: 0;
+      color: rgba(232, 238, 244, 0.7);
+      font-size: max(1.6vmin, 12px);
+      letter-spacing: 0.2em;
+      opacity: 0;
+    }
+
+    .scout-showcase.is-showing .scout-show-counter {
+      opacity: 1;
+      transition: opacity 300ms ease-out 120ms;
+    }
+
+    /* 干员名：从下方 3vmin 滑入 + 淡入 */
+    .scout-show-name {
+      margin: 0;
+      color: #ffffff;
+      font-size: max(6vmin, 34px);
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-shadow: 0 0 2.6vmin var(--star-glow, rgba(255, 255, 255, 0.55)),
+        0 0 6vmin rgba(0, 0, 0, 0.65);
+      opacity: 0;
+    }
+
+    .scout-showcase.is-showing .scout-show-name {
+      animation: show-name-in 500ms cubic-bezier(0.2, 0.8, 0.3, 1) 1 both;
+    }
+
+    @keyframes show-name-in {
+      0% {
+        opacity: 0;
+        transform: translateY(3vmin);
+      }
+      100% {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    /* 星数：未点亮是暗灰，点亮时按星级上色并弹一下 */
+    .scout-show-stars {
+      display: flex;
+      gap: 0.8vmin;
+      font-size: max(2.8vmin, 16px);
+      line-height: 1;
+      color: #4a4f55;
+    }
+
+    .scout-show-stars span {
+      display: block;
+      opacity: 0.35;
+      transform: scale(0.86);
+    }
+
+    .scout-show-stars span.is-lit {
+      color: var(--star, #ffffff);
+      opacity: 1;
+      text-shadow: 0 0 1.5vmin var(--star-glow, rgba(255, 255, 255, 0.5));
+      animation: star-pop 260ms cubic-bezier(0.3, 1.5, 0.5, 1) 1 both;
+    }
+
+    @keyframes star-pop {
+      0% {
+        transform: scale(0.5);
+      }
+      60% {
+        transform: scale(1.25);
+      }
+      100% {
+        transform: scale(1);
+      }
+    }
+
+    /* 十连时的底部小圆点进度：底排是暗点，亮排用宽度百分比表示进度 */
+    .scout-dots {
+      position: absolute;
+      left: 50%;
+      bottom: 9vmin;
+      width: 40vmin;
+      height: 1.6vmin;
+      margin-left: -20vmin;
+      background-image: radial-gradient(circle,
+        rgba(255, 255, 255, 0.26) 0 42%, rgba(255, 255, 255, 0) 46%);
+      background-repeat: repeat-x;
+      background-size: 4vmin 1.6vmin;
+      background-position: 0.9vmin 0;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .scout-dots.is-on {
+      opacity: 1;
+      transition: opacity 260ms ease-out;
+    }
+
+    .scout-dots-fill {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 0;
+      background-image: radial-gradient(circle, #ffd76a 0 40%,
+        rgba(255, 215, 106, 0.4) 50%, rgba(255, 215, 106, 0) 58%);
+      background-repeat: repeat-x;
+      background-size: 4vmin 1.6vmin;
+      background-position: 0.9vmin 0;
+      transition: width 220ms ease-out;
+    }
+
+    /* 底部小字提示 */
+    .scout-show-hint {
+      margin: 0;
+      color: rgba(235, 240, 245, 0.62);
+      font-size: max(1.4vmin, 11px);
+      letter-spacing: 0.26em;
+      opacity: 0;
+    }
+
+    .scout-showcase.is-showing .scout-show-hint {
+      opacity: 1;
+      transition: opacity 300ms ease-out 420ms;
+    }
+
+    /* 翻页：旧的快速上滑淡出 */
+    .scout-showcase.is-out .scout-show-name,
+    .scout-showcase.is-out .scout-show-stars,
+    .scout-showcase.is-out .scout-show-counter {
+      animation: show-item-out 180ms ease-in 1 both;
+    }
+
+    @keyframes show-item-out {
+      0% {
+        opacity: 1;
+        transform: translateY(0);
+      }
+      100% {
+        opacity: 0;
+        transform: translateY(-2.6vmin);
+      }
+    }
+
+    /* 退出：展示淡出回主界面 */
+    .scout-overlay.is-leaving .scout-showcase {
+      animation: show-case-out 260ms ease-out 1 both;
+    }
+
+    @keyframes show-case-out {
+      0% {
+        opacity: 1;
+        transform: scale(1);
+      }
+      100% {
+        opacity: 0;
+        transform: scale(1.04);
+      }
+    }
+
+    .scout-overlay.is-leaving .scout-dots {
+      opacity: 0;
+      transition: opacity 260ms ease-out;
+    }
+
+    .scout-overlay.is-leaving .scout-veil {
+      animation: veil-out 280ms ease-out 1 both;
+    }
+
+    @keyframes veil-out {
+      from {
+        opacity: 1;
+      }
+      to {
+        opacity: 0;
+      }
+    }
+
+    /* 收尾（含中途跳过）：幕布背景、舞台、提示一起淡出 */
+    .scout-overlay.is-leaving::before {
+      opacity: 0;
+      transition: opacity 280ms ease-out;
+    }
+
+    .scout-overlay.is-leaving .scout-scene,
+    .scout-overlay.is-leaving .scout-marks,
+    .scout-overlay.is-leaving .scout-beam,
+    .scout-overlay.is-leaving .scout-drag-hint {
+      opacity: 0;
+      transition: opacity 260ms ease-out;
+    }
+
+    /* ---------- 拖拽提示与 SKIP 按钮 ---------- */
+    .scout-drag-hint {
+      position: absolute;
+      left: 0;
+      right: 0;
+      bottom: 15vmin;
+      margin: 0;
+      color: rgba(240, 244, 248, 0.86);
+      font-size: max(1.5vmin, 12px);
+      letter-spacing: 0.2em;
+      text-align: center;
+      text-shadow: 0 0 1vmin rgba(0, 0, 0, 0.85);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 260ms ease-out;
+    }
+
+    .scout-overlay.is-on .scout-drag-hint {
+      opacity: 0.9;
+      transition: opacity 300ms ease-out 320ms;
+    }
+
+    /* 开始拖动后提示淡出 */
+    .scout-overlay.is-dragging .scout-drag-hint {
+      opacity: 0;
+      transition: opacity 200ms ease-out;
+    }
+
+    .scout-skip {
+      position: absolute;
+      top: 2.6vmin;
+      right: 2.6vmin;
+      display: flex;
+      align-items: center;
+      gap: 1vmin;
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      border-radius: 0.4vmin;
+      /* 用 max() 兜底：手机窄屏下 vmin 会很小，保证按钮仍然点得到、看得清 */
+      padding: max(1.1vmin, 8px) max(1.7vmin, 13px);
+      background: rgba(28, 30, 33, 0.74);
+      color: #f2f4f6;
+      cursor: pointer;
+      font-size: max(1.5vmin, 12px);
+      font-weight: 700;
+      letter-spacing: 0.22em;
+      opacity: 0;
+    }
+
+    /* ▶ 三角用 border 画，避免依赖字体里的符号 */
+    .scout-skip::before {
+      width: 0;
+      height: 0;
+      border-left: 1.1vmin solid #f2f4f6;
+      border-top: 0.78vmin solid transparent;
+      border-bottom: 0.78vmin solid transparent;
+      content: "";
+    }
+
+    .scout-overlay.is-on .scout-skip {
+      opacity: 1;
+      transition: opacity 200ms ease-out 220ms;
+    }
+
+    /* 阶段六里 SKIP 变暗一点，但仍然可点 */
+    .scout-overlay.is-showing-phase .scout-skip {
+      opacity: 0.34;
+      transition: opacity 300ms ease-out;
+    }
+
+    /* ---------- 阶段二 · 开卡：卡片逐张从右侧滑入 ---------- */
+
+    /* 未入场：先藏在右边 30px，等轮到它才滑进来 */
+    .result-card.is-pending {
+      opacity: 0;
+      transform: translateX(30px);
+      transition: none;
+    }
+
+    /* 入场：淡入 + 回到原位（时长要和 JS 里的 CARD_ENTER 保持一致） */
+    .result-card.is-revealed {
+      opacity: 1;
+      transform: translateX(0);
+      transition: opacity 320ms ease-out, transform 320ms ease-out;
+    }
+
+    /* 跳过动画时：关掉过渡，全部卡片瞬间到位 */
+    .result-grid.is-skip .result-card {
+      transition: none;
+    }
+
+    /* 让卡片文字压在光柱上面，光柱看起来才是「从卡片背后升起」 */
+    .result-card > .card-meta,
+    .result-card > .operator-name,
+    .result-card > .card-foot {
+      position: relative;
+      z-index: 1;
+    }
+
+    /* 6★ 的金色光柱：一条竖直渐变亮条，从卡片顶部扫到底部。
+       基础 opacity 必须是 0，动画也要 both 收尾，
+       否则动画播完后伪元素会恢复成 opacity:1，在卡片上留下一条竖亮条。 */
+    .result-card.star-6.is-revealed::after {
+      position: absolute;
+      top: 0;
+      left: 50%;
+      width: 46px;
+      height: 100%;
+      margin-left: -23px;
+      background: linear-gradient(
+        180deg,
+        rgba(255, 255, 255, 0) 0%,
+        rgba(255, 236, 180, 0.95) 35%,
+        rgba(255, 214, 106, 0.75) 55%,
+        rgba(255, 255, 255, 0) 100%
+      );
+      content: "";
+      filter: blur(2px);
+      opacity: 0;
+      pointer-events: none;
+      animation: pillar-rise 620ms ease-out 1 both;
+    }
+
+    @keyframes pillar-rise {
+      0% {
+        opacity: 0;
+        transform: translateY(-100%) scaleY(0.6);
+      }
+      25% {
+        opacity: 1;
+      }
+      100% {
+        opacity: 0;
+        transform: translateY(100%) scaleY(1);
+      }
+    }
+
+    /* 注意：这里原本有 body.is-shaking / body.is-shaking-strong 的整屏平移震动，
+       已按新设计删除——震动改成只有 6★ 才触发的「相机层」冲击（见 .scout-camera）。
+       body 上不再有任何 transform，避免破坏 fixed 遮罩的定位基准。 */
+
+    @media (max-width: 900px) {
+      .pool-main {
+        bottom: 26vmin;
+        padding-top: 10vmin;
+      }
+
+      .up-card {
+        width: 24vmin;
+        height: 31vmin;
+      }
+
+      .up-card.up-six {
+        width: 28vmin;
+        height: 36vmin;
+      }
+
+      .pool-foot {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 1.6vmin;
+      }
+
+      .draw-actions {
+        justify-content: flex-end;
+      }
+    }
+
+    @media (max-width: 560px) {
+      .data-button {
+        left: 10px;
+        top: 10px;
+      }
+
+      .collab-banner {
+        top: 58px;
+        font-size: 11px;
+        letter-spacing: 0.06em;
+        padding: 8px 12px;
+      }
+
+      .pool-main {
+        bottom: 30vh;
+        gap: 1.6vmin;
+        padding: 12vmin 8px 0;
+      }
+
+      /* 手机上三张卡缩小后仍然横排，不会溢出屏幕 */
+      .up-cards {
+        gap: 1.2vmin;
+      }
+
+      .up-card {
+        width: 29vw;
+        height: 38vw;
+        padding: 8px;
+      }
+
+      .up-card.up-six {
+        width: 33vw;
+        height: 43vw;
+      }
+
+      .up-card-name {
+        font-size: 15px;
+      }
+
+      .rate-banner {
+        width: 100%;
+        padding: 8px 10px;
+        font-size: 12px;
+      }
+
+      .pool-foot {
+        padding: 0 10px 12px;
+      }
+
+      .pool-name {
+        font-size: 17px;
+      }
+
+      .btn-draw {
+        min-width: 0;
+        flex: 1 1 0;
+        height: 48px;
+        padding: 0 10px;
+        font-size: 14px;
+        letter-spacing: 0.06em;
+      }
+
+      .draw-actions {
+        width: 100%;
+      }
+
+      .data-panel-sheet {
+        padding: 10px;
+      }
+
+      .data-card {
+        padding: 12px;
+      }
+
+      .result-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .pool-list {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *,
+      *::before,
+      *::after {
+        scroll-behavior: auto !important;
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- ============ 主界面：仿游戏内卡池页（全屏，纯 CSS 绘制） ============ -->
+  <div class="pool-page">
+    <!-- 背景装饰：深蓝碎片 + 右上体积光（全部 CSS 渐变 / clip-path） -->
+    <div class="pool-bg" aria-hidden="true">
+      <span class="pool-shard"></span>
+      <span class="pool-shard"></span>
+      <span class="pool-shard"></span>
+      <span class="pool-shard"></span>
+      <span class="pool-shard"></span>
+      <span class="pool-shard"></span>
+      <span class="pool-shard"></span>
+      <span class="pool-shard"></span>
+      <div class="pool-beam"></div>
+    </div>
+
+    <!-- 左上角：打开「寻访数据」面板（带呼吸辉光） -->
+    <button class="data-button" id="data-button" type="button"
+      aria-label="打开寻访数据">☰</button>
+
+    <!-- 中部：三张 UP 干员卡 + 概率提升横幅 -->
+    <section class="pool-main" aria-label="本期概率提升干员">
+      <div class="up-cards">
+        <article class="up-card up-five">
+          <span class="up-card-tag">联动 UP</span>
+          <div class="up-card-art" aria-hidden="true"></div>
+          <div class="up-card-foot">
+            <h3 class="up-card-name">埃癸斯</h3>
+            <p class="up-card-stars">★★★★★</p>
+          </div>
+        </article>
+
+        <article class="up-card up-six">
+          <span class="up-card-tag">联动限定</span>
+          <div class="up-card-art" aria-hidden="true"></div>
+          <div class="up-card-foot">
+            <h3 class="up-card-name">结城理</h3>
+            <p class="up-card-stars">★★★★★★</p>
+          </div>
+        </article>
+
+        <article class="up-card up-five">
+          <span class="up-card-tag">联动 UP</span>
+          <div class="up-card-art" aria-hidden="true"></div>
+          <div class="up-card-foot">
+            <h3 class="up-card-name">岳羽由加莉</h3>
+            <p class="up-card-stars">★★★★★</p>
+          </div>
+        </article>
+      </div>
+
+      <div class="rate-banner">
+        <span>以上干员获得概率提升</span>
+        <span class="rate-banner-arrow" aria-hidden="true">↗</span>
+      </div>
+    </section>
+
+    <!-- 左下：池子名称 + 「剩余 N 次寻访必得」计数条；右下：两颗大按钮 -->
+    <div class="pool-foot">
+      <div class="pool-info">
+        <h1 class="pool-name">圣城春日学生寻访</h1>
+        <div class="pity-counter">
+          <span class="pity-counter-label">剩余</span>
+          <strong class="pity-counter-number" id="pool-pity-counter">120</strong>
+          <span class="pity-counter-text">次寻访必得</span>
+        </div>
+      </div>
+
+      <div class="draw-actions">
+        <button class="btn-draw btn-draw-single" id="single-draw" type="button">
+          寻访一次
+        </button>
+        <button class="btn-draw btn-draw-ten" id="ten-draw" type="button">
+          寻访十次
+        </button>
+      </div>
+    </div>
+
+    <!-- 结城理庆祝横幅（沿用原有 ID，适配深色 UI） -->
+    <div class="collab-banner" id="collab-banner" role="status">
+      ✦ 联动限定 结城理 应召而来 ✦
+    </div>
+  </div>
+
+  <!-- ============ 「寻访数据」全屏面板  <!-- ============ 「寻访数据」全屏面板  <!-- ============ 「寻访数据」全屏面板：收编原侧栏全部内容 ============ -->
+  <div class="data-panel" id="data-panel" aria-hidden="true">
+    <div class="data-panel-backdrop" id="data-panel-backdrop"></div>
+
+    <div class="data-panel-sheet" id="data-panel-sheet">
+      <header class="data-panel-head">
+        <h2>寻访数据</h2>
+        <button class="data-panel-close" id="data-panel-close" type="button"
+          aria-label="关闭">×</button>
+      </header>
+
+      <div class="data-panel-body">
+        <!-- a. 最近寻访结果 -->
+        <section class="data-card">
+          <h3 class="data-card-title">最近寻访结果 <span id="draw-summary">累计抽数：0</span></h3>
+          <div class="result-area">
+            <div class="result-grid" id="result-grid" aria-live="polite">
+              <div class="empty-state" id="empty-state">还没有抽卡结果</div>
+            </div>
+          </div>
+        </section>
+
+        <!-- b. 累计统计 -->
+        <section class="data-card" aria-labelledby="stats-title">
+          <h3 class="data-card-title" id="stats-title">累计统计</h3>
+          <div class="summary-grid">
+            <div class="metric">
+              <span>总抽数</span>
+              <strong id="stat-total">0</strong>
+            </div>
+            <div class="metric">
+              <span>平均抽出 6★</span>
+              <strong id="stat-average">--</strong>
+            </div>
+          </div>
+
+          <div class="rate-list">
+            <div class="rate-row star-3">
+              <strong>3★</strong>
+              <div class="rate-bar"><span id="bar-3"></span></div>
+              <span class="rate-value" id="rate-3">0 次 · 0.00%</span>
+            </div>
+            <div class="rate-row star-4">
+              <strong>4★</strong>
+              <div class="rate-bar"><span id="bar-4"></span></div>
+              <span class="rate-value" id="rate-4">0 次 · 0.00%</span>
+            </div>
+            <div class="rate-row star-5">
+              <strong>5★</strong>
+              <div class="rate-bar"><span id="bar-5"></span></div>
+              <span class="rate-value" id="rate-5">0 次 · 0.00%</span>
+            </div>
+            <div class="rate-row star-6">
+              <strong>6★</strong>
+              <div class="rate-bar"><span id="bar-6"></span></div>
+              <span class="rate-value" id="rate-6">0 次 · 0.00%</span>
+            </div>
+          </div>
+
+          <div class="pity-box">
+            <div class="pity-head">
+              <span>6★ 概率保底（50 抽后每抽 +2%）</span>
+              <strong id="stat-pity">0 抽</strong>
+            </div>
+            <div class="pity-track" aria-hidden="true">
+              <span id="pity-progress"></span>
+            </div>
+            <p class="pity-note" id="pity-note">当前 6★ 出率 2.00%</p>
+          </div>
+        </section>
+
+        <!-- c. 联动保底状态 -->
+        <section class="data-card">
+          <h3 class="data-card-title">联动保底状态</h3>
+          <div class="collab-box">
+            <div class="pity-head">
+              <span>结城理 · 120 抽硬保底</span>
+              <strong id="stat-ritsu">0 次</strong>
+            </div>
+            <div class="pity-track collab" aria-hidden="true">
+              <span id="ritsu-progress"></span>
+            </div>
+            <p class="pity-note" id="ritsu-note">距 120 保底还剩 120 抽</p>
+
+            <div class="pity-head">
+              <span>5★ UP 保底（距上次 UP 5★）</span>
+              <strong id="stat-pity5up">0 抽</strong>
+            </div>
+            <div class="pity-track up5" aria-hidden="true">
+              <span id="pity5up-progress"></span>
+            </div>
+            <p class="pity-note" id="pity5up-note">距 5★ UP 保底还剩 50 抽</p>
+
+            <div class="buff-row">
+              <span>「另一名」保证</span>
+              <strong id="stat-buff">未触发</strong>
+            </div>
+            <p class="pity-note" id="stat-buff-note">
+              首次获得任意一名 UP 5★ 后，下一只 5★ 必为另一名
+            </p>
+
+            <div class="up5-counts">
+              <span>埃癸斯 <strong id="stat-agaes">0</strong> 次</span>
+              <span>岳羽由加莉 <strong id="stat-yukari">0</strong> 次</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- d. 历史记录 -->
+        <section class="data-card">
+          <h3 class="data-card-title">历史记录</h3>
+          <div class="history-section">
+            <div class="history-head">
+              <h3>历史 6★</h3>
+              <span id="history-count">共 0 个</span>
+            </div>
+            <ol class="history-list" id="history-list">
+              <li class="history-empty">暂无 6★ 记录</li>
+            </ol>
+          </div>
+
+          <div class="history-section">
+            <div class="history-head">
+              <h3>联动干员记录</h3>
+              <span id="collab-history-count">共 0 个</span>
+            </div>
+            <ol class="history-list" id="collab-history-list">
+              <li class="history-empty">暂无联动干员记录</li>
+            </ol>
+          </div>
+        </section>
+
+        <!-- e. 卡池详情 -->
+        <section class="data-card">
+          <h3 class="data-card-title">卡池详情</h3>
+          <div class="pool-detail" id="pool-detail"></div>
+        </section>
+
+        <!-- f. 模拟验证 -->
+        <section class="data-card simulation-panel">
+          <h3 class="data-card-title">模拟验证</h3>
+          <button class="btn btn-secondary" id="simulate-button" type="button">
+            模拟 100000 次
+          </button>
+          <div class="simulation-output" id="simulation-output">
+            模拟结果不会计入个人统计
+          </div>
+        </section>
+
+        <!-- g. 重置 -->
+        <section class="data-card reset-panel">
+          <button class="btn btn-danger" id="reset-button" type="button">
+            重置全部数据
+          </button>
+        </section>
+
+        <!-- h. 概率说明 -->
+        <p class="foot-note">
+          概率说明：6★ 2%（连续 50 抽未出 6★ 后第 51 抽起每抽 +2%，最高 100%）；
+          5★ 8%（其中 50% 为联动 UP：埃癸斯 25% / 岳羽由加莉 25%）；
+          4★ 50%；3★ 40%（4★/3★ 无任何保底）。
+          6★ 中 50% 为联动限定 结城理，且结城理享有 120 抽硬保底（第 120 抽必出）；
+          5★ UP 享有 50 抽保底，另有一次性「另一名」保证。所有保底计数器相互独立并自动保存。
+          控制台可执行 <code>Gacha.selfTest()</code> 自测、<code>Gacha.verifyPool()</code> 校验名单。
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 【动画层 · 寻访动画】行李袋寻访的全屏舞台。
+       全部视觉元素都由 CSS 渐变 / 边框 / clip-path 绘制，没有任何图片素材，
+       14 颗火星粒子由 JS 在页面加载时创建一次（动画层 DOM 总数 <= 60）。 -->
+  <div class="scout-overlay" id="scout-overlay" aria-hidden="true">
+    <!-- 相机层：标记 / 体积光 / 舞台全装在里面，震动时作为「一个镜头」整体动 -->
+    <div class="scout-camera" id="scout-camera" aria-hidden="true">
+      <div class="scout-marks">
+        <span class="scout-mark"></span>
+        <span class="scout-mark"></span>
+        <span class="scout-mark"></span>
+      </div>
+      <div class="scout-beam"></div>
+
+      <div class="scout-scene" id="scout-scene">
+        <div class="scout-shaft"></div>
+
+        <!-- 行李袋：外层只管位置与整体透明度，会动的部分都在内层
+             （宽 72vmin，手机上是 min(72vmin, 92vw)；拖拽区域 touch-action: none） -->
+        <div class="scout-bag" id="scout-bag">
+          <div class="scout-bag-inner">
+            <div class="scout-zip" id="scout-zip">
+              <div class="scout-seam"></div>
+              <div class="scout-pull" id="scout-pull"></div>
+            </div>
+            <p class="scout-bag-label">HUMAN
+RESOURCE</p>
+          </div>
+        </div>
+
+        <div class="scout-sparks" id="scout-sparks"></div>
+
+        <!-- 新增：拉到底后从袋子正中央爆发的光束（6★ 为放射状金色光线） -->
+        <div class="scout-core-light" aria-hidden="true"></div>
+
+        <!-- 渐暗黑幕排在档案袋下面：先压暗一切，档案袋再在它之上被黑暗吞没 -->
+        <div class="scout-veil"></div>
+
+        <div class="scout-file">
+          <span class="scout-file-logo"></span>
+          <span class="scout-file-tab"></span>
+          <span class="scout-file-text">RHODES ISLAND</span>
+        </div>
+      </div>
+    </div>
+
+    <p class="scout-drag-hint" id="scout-drag-hint">按住拉链头，向左拉动</p>
+
+    <div class="scout-flash" aria-hidden="true"></div>
+
+    <!-- 阶段六：从黑场中浮现的干员展示层
+         （6★ 的飘落金星与点缀星点由 JS 在初始化时创建，挂在这一层里面） -->
+    <div class="scout-showcase" id="scout-showcase" aria-hidden="true">
+      <div class="scout-show-glow"></div>
+      <p class="scout-show-counter" id="scout-show-counter" hidden></p>
+      <p class="scout-show-name" id="scout-show-name"></p>
+      <!-- 星数由 JS 每次展示时按当前星级重建（3★ 三个、6★ 六个，内容为 ★） -->
+      <div class="scout-show-stars" id="scout-show-stars"></div>
+      <p class="scout-show-hint" id="scout-show-hint">点击继续</p>
+    </div>
+
+    <!-- 十连时的底部小圆点进度（两层层叠：暗点底排 + 亮色进度排） -->
+    <div class="scout-dots" id="scout-dots" aria-hidden="true">
+      <span class="scout-dots-fill" id="scout-dots-fill"></span>
+    </div>
+
+    <button class="scout-skip" id="scout-skip" type="button">SKIP</button>
+  </div>
+
+  <script>
+    "use strict";
+
+    /* ==================== 核心逻辑开始（自动化测试读取此段） ==================== */
+
+    /* ------------------------------------------------------------------
+     * 一、卡池名单（逐字照抄官方名单，禁止改动、去重或合并）
+     * POOL 里已经包含 3 名联动干员，常驻随机池会自动剔除他们。
+     * ---------------------------------------------------------------- */
+    const POOL = {
+      "6": [
+        "鸿雪", "玛恩纳", "白铁", "斥罪", "焰影苇草", "林", "仇白", "伊内丝",
+        "霍尔海雅", "圣约送葬人", "提丰", "琳琅诗怀雅", "涤火杰西卡", "赫德雷",
+        "薇薇安娜", "锏", "莱伊", "左乐", "阿斯卡纶", "逻各斯", "乌尔比安",
+        "妮芙", "娜仁图亚", "维娜·维多利亚", "忍冬", "引星棘刺", "烛煌",
+        "隐德来希", "死芒", "Mon3tr", "蕾缪安", "酒神", "司霆惊蛰", "遥",
+        "真言", "圣聆初雪", "娜斯提", "缇缇", "赤刃明霄陈", "贝洛内",
+        "怒潮凛冬", "可露希尔", "谬因", "珊比", "结城理"
+      ],
+      "5": [
+        "晓歌", "但书", "明椒", "子月", "和弦", "火哨", "铎铃", "洋灰", "玫拉",
+        "空构", "寒檀", "青枳", "杏仁", "刺玫", "深律", "烈夏", "温米", "小满",
+        "阿罗玛", "历阵锐枪芬", "海霓", "渡桥", "衡沙", "波卜", "裁度", "特克诺",
+        "寻澜", "诺威尔", "钼铅", "阿兰娜", "聆音", "蒂比", "录武官", "吉星",
+        "折桠", "雪猎", "响石", "撷英调香师", "风絮", "复奏", "乌啾", "裂响",
+        "佩德洛", "嘉辛塔", "埃癸斯", "岳羽由加莉"
+      ],
+      "4": [
+        "夜烟", "远山", "杰西卡", "流星", "白雪", "清道夫", "红豆", "杜宾",
+        "缠丸", "霜叶", "慕斯", "砾", "暗索", "末药", "调香师", "角峰", "蛇屠箱",
+        "古米", "深海色", "地灵", "阿消", "猎蜂", "格雷伊", "苏苏洛", "桃金娘",
+        "红云", "梅", "安比尔", "宴", "刻刀", "波登可", "卡达", "子", "酸糖",
+        "芳汀", "泡泡", "杰克", "松果", "豆苗", "深靛", "罗比拉塔", "福果",
+        "铅踝", "休谟斯", "维荻", "露托", "骋风", "冬时"
+      ],
+      "3": [
+        "芬", "香草", "翎羽", "玫兰莎", "卡缇", "米格鲁", "克洛丝", "炎熔",
+        "芙蓉", "安赛尔", "史都华德", "梓兰", "空爆", "月见夜", "斑点", "泡普卡"
+      ]
+    };
+
+    // 联动干员（名字必须逐字准确）
+    const UP_SIX = "结城理";            // 6★ 联动限定 UP
+    const UP_FIVE_A = "埃癸斯";         // 5★ 联动 UP
+    const UP_FIVE_B = "岳羽由加莉";     // 5★ 联动 UP
+    const UP_FIVE_LIST = [UP_FIVE_A, UP_FIVE_B];
+    const COLLAB_NAMES = [UP_SIX, UP_FIVE_A, UP_FIVE_B];
+
+    /*
+     * 常驻随机池 = 对应星级名单剔除 UP 干员。
+     * UP 干员只会通过 UP 判定或强制保底路径获得，绝不会出现在这里。
+     * 结果：6★ 常驻 44 个，5★ 常驻 44 个。
+     */
+    const RESIDENT = {
+      6: POOL["6"].filter((name) => name !== UP_SIX),
+      5: POOL["5"].filter((name) => UP_FIVE_LIST.indexOf(name) === -1),
+      4: POOL["4"].slice(),
+      3: POOL["3"].slice()
+    };
+
+    /* ------------------------------------------------------------------
+     * 二、概率与保底参数
+     * ---------------------------------------------------------------- */
+    const BASE_RATES = { 3: 0.40, 4: 0.50, 5: 0.08, 6: 0.02 };
+
+    const SIX_PITY_START = 50;   // 连续 50 抽没出 6★ 之后开始加概率
+    const SIX_PITY_STEP = 0.02;  // 每抽 +2%
+    const SIX_PITY_MAX = 98;     // 达到 98 时 6★ 概率为 100%（即最多 99 抽必出）
+    const SIX_UP_RATE = 0.5;     // 6★ 里 50% 是结城理
+    const FIVE_UP_RATE = 0.5;    // 5★ 里 50% 是联动 UP（各 25%）
+    const RITSU_HARD_PITY = 120; // pity120 达到 119 时，下一抽强制结城理
+    const PITY5UP_LIMIT = 50;    // pity5up 达到 50 后，下一只 5★ 强制 UP
+
+    // 新的本地存储 key，旧 key（标准池）不读也不删
+    const STORAGE_KEY = "gacha_stats_collab";
+
+    /* ------------------------------------------------------------------
+     * 三、纯函数抽卡核心
+     * ---------------------------------------------------------------- */
+
+    // 取一个 [0,1) 随机数并映射成数组下标，避免越界
+    function pickRandom(list, rng) {
+      const index = Math.min(Math.floor(rng() * list.length), list.length - 1);
+      return list[index];
+    }
+
+    // 需要持久化的全部计数器与状态位；firstUp5 用来记住「另一名」是谁
+    function createPityState() {
+      return {
+        pity6: 0,        // 距上次 6★ 已连续抽了多少次
+        pity120: 0,      // 距上次获得结城理的抽数
+        pity5up: 0,      // 距上次获得任意 UP 5★ 的抽数
+        buffUsed: false, // 「另一名」保证是否已经触发过（全局只触发一次）
+        firstUp5: null   // 已获得的第一名 UP 5★
+      };
+    }
+
+    // 当前 6★ 出率：50 抽以内 2%，第 51 抽起每抽 +2%，98 及以上 100%
+    function getSixStarRate(pity6) {
+      if (pity6 < SIX_PITY_START) {
+        return BASE_RATES[6];
+      }
+      if (pity6 >= SIX_PITY_MAX) {
+        return 1.0;
+      }
+      return BASE_RATES[6] + (pity6 - SIX_PITY_START + 1) * SIX_PITY_STEP;
+    }
+
+    // 6★ 增加的概率，按基础比例从 3★、4★、5★ 中扣除
+    function getStarProbabilities(pity6) {
+      const sixRate = getSixStarRate(pity6);
+      const nonSixRate = 1.0 - sixRate;
+      const probabilities = { 6: sixRate };
+
+      for (const star of [3, 4, 5]) {
+        probabilities[star] =
+          BASE_RATES[star] / (1.0 - BASE_RATES[6]) * nonSixRate;
+      }
+
+      return probabilities;
+    }
+
+    /*
+     * 核心抽卡函数（纯函数）：
+     *   drawOne(state, rng) -> { result, state }
+     *
+     * - 只读取传入的 state，绝不修改它，返回一个全新的 state。
+     * - state 里带着全部计数器与 buffUsed，配合固定 rng 就能做边界测试。
+     * - rng 默认 Math.random；测试时可以传一个固定序列的函数。
+     *
+     * 判定顺序：
+     *   1) 结城理 120 抽硬保底（pity120 已达 119）：跳过一切概率判定，直接给结城理
+     *   2) 摇星级（6★ 概率保底在这里生效）
+     *   3) 按星级决定干员：
+     *      6★：50% 结城理，否则常驻 6★ 池随机（每次独立，没有大保底）
+     *      5★：「另一名」保证 > 5★ UP 保底 > 正常 25%/25%/50% 判定
+     *      4★/3★：常驻池随机
+     *   4) 更新 4 个相互独立的计数器 / 状态位
+     */
+    function drawOne(state, rng = Math.random) {
+      // 新 state（不在旧对象上做任何写入）
+      const next = {
+        pity6: state.pity6,
+        pity120: state.pity120,
+        pity5up: state.pity5up,
+        buffUsed: state.buffUsed === true,
+        firstUp5: state.firstUp5 || null
+      };
+
+      let star;
+      let name;
+      let hardPity = false; // 是否由 120 抽硬保底强制产生
+
+      if (state.pity120 >= RITSU_HARD_PITY - 1) {
+        /* ---- 规则 5：结城理 120 抽硬保底，优先级最高，不消耗任何随机数 ---- */
+        star = 6;
+        name = UP_SIX;
+        hardPity = true;
+      } else {
+        /* ---- 规则 1 + 2：先摇星级 ---- */
+        const probabilities = getStarProbabilities(state.pity6);
+        const roll = rng();
+        star = 3;
+
+        if (roll < probabilities[6]) {
+          star = 6;
+        } else if (roll < probabilities[6] + probabilities[5]) {
+          star = 5;
+        } else if (roll < probabilities[6] + probabilities[5] + probabilities[4]) {
+          star = 4;
+        }
+
+        /* ---- 规则 3 / 4 / 6 / 7：再决定是哪一位干员 ---- */
+        if (star === 6) {
+          // 6★：50% 结城理，否则从常驻 6★ 池随机；每次 6★ 独立判定
+          name = rng() < SIX_UP_RATE ? UP_SIX : pickRandom(RESIDENT[6], rng);
+        } else if (star === 5) {
+          if (!next.buffUsed && next.firstUp5) {
+            /* 规则 7：「另一名」保证（优先级最高，全局只触发一次） */
+            name = next.firstUp5 === UP_FIVE_A ? UP_FIVE_B : UP_FIVE_A;
+            next.buffUsed = true;
+          } else if (state.pity5up >= PITY5UP_LIMIT) {
+            /* 规则 6：pity5up 达到 50 后，下一只 5★ 强制为 UP（两名中随机） */
+            name = rng() < 0.5 ? UP_FIVE_A : UP_FIVE_B;
+          } else {
+            /* 规则 4：25% 埃癸斯 / 25% 岳羽由加莉 / 50% 常驻 5★ */
+            const upRoll = rng();
+            if (upRoll < 0.25) {
+              name = UP_FIVE_A;
+            } else if (upRoll < 0.5) {
+              name = UP_FIVE_B;
+            } else {
+              name = pickRandom(RESIDENT[5], rng);
+            }
+          }
+        } else {
+          // 4★ / 3★：没有任何保底，直接常驻池随机
+          name = pickRandom(RESIDENT[star], rng);
+        }
+      }
+
+      const isUp6 = name === UP_SIX;
+      const isUp5 = UP_FIVE_LIST.indexOf(name) !== -1;
+
+      /* ---- 规则 8：四个计数器 / 状态位相互独立地更新 ---- */
+      // 6★ 概率保底：出任意 6★（包括硬保底结城理）都清零，否则 +1
+      next.pity6 = star === 6 ? 0 : state.pity6 + 1;
+
+      // 结城理保底：任何方式获得结城理都清零，否则 +1
+      next.pity120 = isUp6 ? 0 : state.pity120 + 1;
+
+      // 5★ UP 保底：获得 UP 5★ 清零；获得非 UP 的 5★ 不清零，继续累计
+      next.pity5up = isUp5 ? 0 : state.pity5up + 1;
+
+      // 首次获得任意一名 UP 5★ 时记下是谁，供「另一名」保证使用
+      if (isUp5 && !next.firstUp5) {
+        next.firstUp5 = name;
+      }
+
+      return {
+        result: {
+          star: star,
+          name: name,
+          isUp6: isUp6,
+          isUp5: isUp5,
+          hardPity: hardPity
+        },
+        state: next
+      };
+    }
+
+    /* ------------------------------------------------------------------
+     * 四、个人数据（统计 + 计数器）与本地存储
+     * ---------------------------------------------------------------- */
+    function createNewStats() {
+      return {
+        totalDraws: 0,
+        starCounts: { 3: 0, 4: 0, 5: 0, 6: 0 },
+        sixStarHistory: [],       // 每个 6★：{ drawNumber, name }
+        up5History: [],           // 每个 UP 5★：{ drawNumber, name }
+        collabCounts: { "结城理": 0, "埃癸斯": 0, "岳羽由加莉": 0 },
+        state: createPityState()  // 全部计数器与 buffUsed
+      };
+    }
+
+    function toNonNegativeInteger(value) {
+      const number = Number(value);
+      if (!Number.isFinite(number) || number < 0) {
+        return 0;
+      }
+      return Math.floor(number);
+    }
+
+    // 把从 localStorage 读到的数据规范成安全结构，读取失败时静默使用新数据
+    function normalizeStats(rawStats) {
+      const stats = createNewStats();
+      if (!rawStats || typeof rawStats !== "object") {
+        return stats;
+      }
+
+      stats.totalDraws = toNonNegativeInteger(rawStats.totalDraws);
+
+      const rawCounts =
+        rawStats.starCounts && typeof rawStats.starCounts === "object"
+          ? rawStats.starCounts
+          : {};
+      for (const star of [3, 4, 5, 6]) {
+        stats.starCounts[star] = toNonNegativeInteger(rawCounts[star]);
+      }
+
+      if (Array.isArray(rawStats.sixStarHistory)) {
+        stats.sixStarHistory = rawStats.sixStarHistory
+          .filter((item) => item && typeof item === "object")
+          .map((item) => ({
+            drawNumber: toNonNegativeInteger(item.drawNumber),
+            name: typeof item.name === "string" ? item.name : "未知干员"
+          }));
+      }
+
+      if (Array.isArray(rawStats.up5History)) {
+        stats.up5History = rawStats.up5History
+          .filter((item) => item && typeof item === "object")
+          .map((item) => ({
+            drawNumber: toNonNegativeInteger(item.drawNumber),
+            name: typeof item.name === "string" ? item.name : "未知干员"
+          }));
+      }
+
+      const rawCollab =
+        rawStats.collabCounts && typeof rawStats.collabCounts === "object"
+          ? rawStats.collabCounts
+          : {};
+      for (const name of COLLAB_NAMES) {
+        stats.collabCounts[name] = toNonNegativeInteger(rawCollab[name]);
+      }
+
+      const rawState =
+        rawStats.state && typeof rawStats.state === "object" ? rawStats.state : {};
+      stats.state.pity6 = Math.min(
+        toNonNegativeInteger(rawState.pity6),
+        SIX_PITY_MAX
+      );
+      stats.state.pity120 = Math.min(
+        toNonNegativeInteger(rawState.pity120),
+        RITSU_HARD_PITY - 1
+      );
+      stats.state.pity5up = toNonNegativeInteger(rawState.pity5up);
+      stats.state.buffUsed = rawState.buffUsed === true;
+      stats.state.firstUp5 =
+        rawState.firstUp5 === UP_FIVE_A || rawState.firstUp5 === UP_FIVE_B
+          ? rawState.firstUp5
+          : null;
+
+      return stats;
+    }
+
+    function loadStats() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) {
+          return createNewStats();
+        }
+        return normalizeStats(JSON.parse(raw));
+      } catch (error) {
+        return createNewStats();
+      }
+    }
+
+    function saveStats(stats) {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(stats));
+      } catch (error) {
+        // 浏览器禁用本地存储时仍允许本次会话继续运行
+      }
+    }
+
+    // 抽一次并写进个人统计（调用纯函数 drawOne，每抽立即保存）
+    function performPersonalDraw(stats, rng = Math.random) {
+      const outcome = drawOne(stats.state, rng);
+      const result = outcome.result;
+
+      stats.state = outcome.state;
+      stats.totalDraws += 1;
+      stats.starCounts[result.star] += 1;
+
+      if (result.star === 6) {
+        stats.sixStarHistory.push({
+          drawNumber: stats.totalDraws,
+          name: result.name
+        });
+      }
+
+      if (result.isUp5) {
+        stats.up5History.push({
+          drawNumber: stats.totalDraws,
+          name: result.name
+        });
+      }
+
+      for (const name of COLLAB_NAMES) {
+        if (result.name === name) {
+          stats.collabCounts[name] += 1;
+        }
+      }
+
+      saveStats(stats);
+
+      return {
+        star: result.star,
+        name: result.name,
+        isUp6: result.isUp6,
+        isUp5: result.isUp5,
+        hardPity: result.hardPity,
+        drawNumber: stats.totalDraws
+      };
+    }
+
+    /* ------------------------------------------------------------------
+     * 五、批量模拟（不使用也不修改个人数据）
+     * ---------------------------------------------------------------- */
+
+    /*
+     * 基础理论概率：只按「6★ 概率保底」推算，不含联动 120 抽硬保底。
+     * 因为硬保底会把一部分非 6★ 抽直接变成 6★，所以模拟出的 6★ 率
+     * 会比这个理论值略高一点。
+     */
+    function getTheoreticalRates() {
+      const rates = { 3: 0, 4: 0, 5: 0, 6: 0 };
+      let expectedCycleLength = 0;
+      let survival = 1;
+
+      for (let pity6 = 0; pity6 <= SIX_PITY_MAX; pity6 += 1) {
+        const sixRateAtState = getSixStarRate(pity6);
+        const nonSixRate = 1 - sixRateAtState;
+
+        expectedCycleLength += survival;
+        rates[6] += survival * sixRateAtState;
+
+        for (const star of [3, 4, 5]) {
+          rates[star] +=
+            survival *
+            (BASE_RATES[star] / (1 - BASE_RATES[6])) *
+            nonSixRate;
+        }
+
+        survival *= 1 - sixRateAtState;
+      }
+
+      for (const star of [3, 4, 5, 6]) {
+        rates[star] /= expectedCycleLength;
+      }
+
+      return { rates: rates, expectedAverage: expectedCycleLength };
+    }
+
+    function simulateBatch(drawCount, rng = Math.random) {
+      const counts = { 3: 0, 4: 0, 5: 0, 6: 0 };
+      const cast = { ritsu: 0, agaes: 0, yukari: 0 };
+      let state = createPityState();
+      let sixCount = 0;
+      let fiveStarCount = 0;
+      let up5Count = 0;
+      let maxSixGap = 0;
+      let maxRitsuGap = 0;
+      let lastSixIndex = 0;
+      let lastRitsuIndex = 0;
+
+      for (let index = 1; index <= drawCount; index += 1) {
+        const outcome = drawOne(state, rng);
+        const result = outcome.result;
+        state = outcome.state;
+
+        counts[result.star] += 1;
+
+        if (result.star === 6) {
+          sixCount += 1;
+          maxSixGap = Math.max(maxSixGap, index - lastSixIndex);
+          lastSixIndex = index;
+        }
+
+        if (result.star === 5) {
+          fiveStarCount += 1;
+        }
+
+        if (result.isUp5) {
+          up5Count += 1;
+        }
+
+        if (result.name === UP_SIX) {
+          cast.ritsu += 1;
+          maxRitsuGap = Math.max(maxRitsuGap, index - lastRitsuIndex);
+          lastRitsuIndex = index;
+        } else if (result.name === UP_FIVE_A) {
+          cast.agaes += 1;
+        } else if (result.name === UP_FIVE_B) {
+          cast.yukari += 1;
+        }
+      }
+
+      return {
+        drawCount: drawCount,
+        counts: counts,
+        cast: cast,
+        sixCount: sixCount,
+        fiveStarCount: fiveStarCount,
+        up5Count: up5Count,
+        maxSixGap: maxSixGap,
+        maxRitsuGap: maxRitsuGap
+      };
+    }
+
+    /* ------------------------------------------------------------------
+     * 六、控制台自测工具（验收用）
+     * ---------------------------------------------------------------- */
+
+    // 固定序列随机函数：依次返回给定数值，用完后一直返回最后一个
+    function makeRng(values) {
+      let cursor = 0;
+      return function rng() {
+        const value = values[Math.min(cursor, values.length - 1)];
+        cursor += 1;
+        return value;
+      };
+    }
+
+    // 名单校验：数量、唯一性、UP 是否混进常驻池
+    function verifyPool() {
+      const expected = { "6": 45, "5": 46, "4": 48, "3": 16 };
+      const rows = [];
+      let allPass = true;
+
+      for (const star of ["6", "5", "4", "3"]) {
+        const list = POOL[star];
+        const unique = new Set(list);
+        const countPass = list.length === expected[star];
+        const uniquePass = unique.size === list.length;
+        allPass = allPass && countPass && uniquePass;
+        rows.push({
+          检查项: `POOL["${star}"] 数量`,
+          期望: expected[star],
+          实际: list.length,
+          结果: countPass ? "通过" : "失败"
+        });
+        rows.push({
+          检查项: `POOL["${star}"] 无重复`,
+          期望: "无重复",
+          实际: uniquePass ? "无重复" : `重复 ${list.length - unique.size} 个`,
+          结果: uniquePass ? "通过" : "失败"
+        });
+      }
+
+      for (const name of COLLAB_NAMES) {
+        const star = name === UP_SIX ? "6" : "5";
+        const times = POOL[star].filter((item) => item === name).length;
+        const residentTimes = (RESIDENT[star] || RESIDENT[Number(star)] || [])
+          .filter((item) => item === name).length;
+        allPass = allPass && times === 1 && residentTimes === 0;
+        rows.push({
+          检查项: `${name} 在 ${star}★ 名单中出现次数`,
+          期望: 1,
+          实际: times,
+          结果: times === 1 ? "通过" : "失败"
+        });
+        rows.push({
+          检查项: `${name} 未混入常驻池`,
+          期望: 0,
+          实际: residentTimes,
+          结果: residentTimes === 0 ? "通过" : "失败"
+        });
+      }
+
+      const residentSix = RESIDENT[6].length;
+      const residentFive = RESIDENT[5].length;
+      allPass = allPass && residentSix === 44 && residentFive === 44;
+      rows.push({
+        检查项: "常驻 6★ / 5★ 数量",
+        期望: "44 / 44",
+        实际: `${residentSix} / ${residentFive}`,
+        结果: residentSix === 44 && residentFive === 44 ? "通过" : "失败"
+      });
+
+      return { allPass: allPass, rows: rows };
+    }
+
+    /*
+     * 边界自测：用固定 rng 覆盖全部强制规则。
+     * 在浏览器控制台执行 Gacha.selfTest() 即可看到结果。
+     */
+    function selfTest() {
+      const rows = [];
+      const record = (name, pass, detail) => {
+        rows.push({ 用例: name, 结果: pass ? "通过" : "失败", 说明: detail });
+      };
+
+      const pool = verifyPool();
+      for (const row of pool.rows) {
+        record(row.检查项, row.结果 === "通过", `期望 ${row.期望}，实际 ${row.实际}`);
+      }
+
+      // 1) pity120 = 119 → 下一抽必定结城理，且清零 6★ 保底计数
+      let state = createPityState();
+      state.pity120 = RITSU_HARD_PITY - 1;
+      state.pity6 = 70;
+      let outcome = drawOne(state, makeRng([0.999, 0.999, 0.999]));
+      record(
+        "pity120=119 → 下一抽强制结城理",
+        outcome.result.name === UP_SIX &&
+          outcome.result.star === 6 &&
+          outcome.result.hardPity === true &&
+          outcome.state.pity120 === 0 &&
+          outcome.state.pity6 === 0,
+        `得到 ${outcome.result.name} ${outcome.result.star}★，pity120=${outcome.state.pity120}，pity6=${outcome.state.pity6}`
+      );
+
+      // 2) pity120 = 118 时不应强制，抽到 3★ 后变成 119
+      state = createPityState();
+      state.pity120 = RITSU_HARD_PITY - 2;
+      outcome = drawOne(state, makeRng([0.999, 0.5]));
+      record(
+        "pity120=118 → 不强制（普通结果）",
+        outcome.result.star === 3 && outcome.state.pity120 === RITSU_HARD_PITY - 1,
+        `得到 ${outcome.result.name} ${outcome.result.star}★，pity120=${outcome.state.pity120}`
+      );
+
+      // 3) 6★ 判定：第一个随机数进 6★，第二个 < 0.5 就是结城理
+      state = createPityState();
+      state.pity6 = 60;
+      outcome = drawOne(state, makeRng([0.001, 0.2, 0.5]));
+      record(
+        "6★ UP 判定：50% 结城理",
+        outcome.result.name === UP_SIX && outcome.result.isUp6 === true,
+        `得到 ${outcome.result.name}`
+      );
+
+      // 4) 6★ 判定：第二个随机数 ≥ 0.5 就走常驻 6★ 池，且绝不是结城理
+      state = createPityState();
+      outcome = drawOne(state, makeRng([0.001, 0.9, 0.3]));
+      record(
+        "6★ 未中 UP → 常驻 6★（不含结城理）",
+        outcome.result.star === 6 &&
+          outcome.result.name !== UP_SIX &&
+          RESIDENT[6].indexOf(outcome.result.name) !== -1,
+        `得到 ${outcome.result.name}`
+      );
+
+      // 5) pity5up = 50 且出 5★ → 必为 UP 5★，并清零 pity5up
+      state = createPityState();
+      state.pity5up = PITY5UP_LIMIT;
+      outcome = drawOne(state, makeRng([0.05, 0.9]));
+      record(
+        "pity5up=50 → 下一只 5★ 必为 UP",
+        outcome.result.star === 5 &&
+          outcome.result.isUp5 === true &&
+          outcome.state.pity5up === 0,
+        `得到 ${outcome.result.name}，pity5up=${outcome.state.pity5up}`
+      );
+
+      // 6) 先得埃癸斯 → 下一只 5★ 必为岳羽由加莉，并置 buffUsed = true
+      state = createPityState();
+      state.firstUp5 = UP_FIVE_A;
+      outcome = drawOne(state, makeRng([0.05, 0.9]));
+      record(
+        "先得埃癸斯 → 下一只 5★ 必为岳羽由加莉",
+        outcome.result.name === UP_FIVE_B && outcome.state.buffUsed === true,
+        `得到 ${outcome.result.name}，buffUsed=${outcome.state.buffUsed}`
+      );
+
+      // 7) 反方向：先得岳羽由加莉 → 下一只 5★ 必为埃癸斯
+      state = createPityState();
+      state.firstUp5 = UP_FIVE_B;
+      outcome = drawOne(state, makeRng([0.05, 0.9]));
+      record(
+        "先得岳羽由加莉 → 下一只 5★ 必为埃癸斯",
+        outcome.result.name === UP_FIVE_A && outcome.state.buffUsed === true,
+        `得到 ${outcome.result.name}，buffUsed=${outcome.state.buffUsed}`
+      );
+
+      // 8) 「另一名」保证只触发一次：触发后恢复正常 25/25/50 判定
+      state = createPityState();
+      state.firstUp5 = UP_FIVE_A;
+      outcome = drawOne(state, makeRng([0.05, 0.9]));
+      outcome = drawOne(outcome.state, makeRng([0.05, 0.9, 0.3]));
+      record(
+        "「另一名」保证全局只触发一次",
+        outcome.result.isUp5 === false &&
+          RESIDENT[5].indexOf(outcome.result.name) !== -1,
+        `第二次 5★ 得到 ${outcome.result.name}（常驻）`
+      );
+
+      // 9) 非 UP 的 5★ 不清零 pity5up
+      state = createPityState();
+      state.pity5up = 10;
+      outcome = drawOne(state, makeRng([0.05, 0.9, 0.3]));
+      record(
+        "获得非 UP 5★ 时 pity5up 继续累计",
+        outcome.result.isUp5 === false && outcome.state.pity5up === 11,
+        `pity5up=${outcome.state.pity5up}`
+      );
+
+      // 10) 6★ 概率保底：连续 50 抽未出后第 51 抽概率变成 4%
+      record(
+        "6★ 概率保底：pity6=50 时出率 4%",
+        Math.abs(getSixStarRate(50) - 0.04) < 1e-9 &&
+          Math.abs(getSixStarRate(49) - 0.02) < 1e-9 &&
+          getSixStarRate(98) === 1,
+        `pity6=49 → ${(getSixStarRate(49) * 100).toFixed(2)}%，` +
+          `pity6=50 → ${(getSixStarRate(50) * 100).toFixed(2)}%，` +
+          `pity6=98 → ${(getSixStarRate(98) * 100).toFixed(2)}%`
+      );
+
+      // 11) 存档规范化：坏数据不会让页面崩掉
+      const normalized = normalizeStats({
+        totalDraws: -5,
+        starCounts: { 6: "3" },
+        state: { pity6: 999, pity120: 999, pity5up: "7", buffUsed: 1, firstUp5: "错的名字" }
+      });
+      record(
+        "存档规范化（坏数据回退）",
+        normalized.totalDraws === 0 &&
+          normalized.starCounts[6] === 3 &&
+          normalized.state.pity6 === SIX_PITY_MAX &&
+          normalized.state.pity120 === RITSU_HARD_PITY - 1 &&
+          normalized.state.pity5up === 7 &&
+          normalized.state.buffUsed === false &&
+          normalized.state.firstUp5 === null,
+        `pity6=${normalized.state.pity6}，pity120=${normalized.state.pity120}，pity5up=${normalized.state.pity5up}`
+      );
+
+      const failed = rows.filter((row) => row.结果 === "失败");
+      if (typeof console !== "undefined" && console.table) {
+        console.table(rows);
+        console.log(
+          failed.length === 0
+            ? `自测全部通过（${rows.length} 项）`
+            : `自测失败 ${failed.length} 项 / 共 ${rows.length} 项`
+        );
+      }
+
+      return { allPass: failed.length === 0, rows: rows };
+    }
+
+    /* ==================== 核心逻辑结束 ==================== */
+
+    /* ------------------------------------------------------------------
+     * 七、界面渲染
+     * ---------------------------------------------------------------- */
+
+    let stats = loadStats();
+
+    const $ = (id) => document.getElementById(id);
+    const resultGrid = $("result-grid");
+    const drawSummary = $("draw-summary");
+    const collabBanner = $("collab-banner");
+    const singleDrawButton = $("single-draw");
+    const tenDrawButton = $("ten-draw");
+    const simulateButton = $("simulate-button");
+    const resetButton = $("reset-button");
+    const simulationOutput = $("simulation-output");
+    const statTotal = $("stat-total");
+    const statAverage = $("stat-average");
+    const statPity = $("stat-pity");
+    const pityNote = $("pity-note");
+    const pityProgress = $("pity-progress");
+    const statRitsu = $("stat-ritsu");
+    const ritsuProgress = $("ritsu-progress");
+    const ritsuNote = $("ritsu-note");
+    const statPity5up = $("stat-pity5up");
+    const pity5upProgress = $("pity5up-progress");
+    const pity5upNote = $("pity5up-note");
+    const statBuff = $("stat-buff");
+    const statBuffNote = $("stat-buff-note");
+    const statAgaes = $("stat-agaes");
+    const statYukari = $("stat-yukari");
+    const historyCount = $("history-count");
+    const historyList = $("history-list");
+    const collabHistoryCount = $("collab-history-count");
+    const collabHistoryList = $("collab-history-list");
+    const poolDetail = $("pool-detail");
+
+    /* ------------------------------------------------------------------
+     * 主界面与「寻访数据」面板
+     * 这一块只做界面开关，不参与任何抽卡 / 保底 / 统计计算。
+     * ---------------------------------------------------------------- */
+    const poolPityCounter = $("pool-pity-counter"); // 左下角「剩余 N 次寻访必得」
+    const dataButton = $("data-button");            // 左上角小按钮
+    const dataPanel = $("data-panel");              // 全屏面板
+    const dataPanelSheet = $("data-panel-sheet");   // 面板本体（点它的空白处＝关闭）
+    const dataPanelBackdrop = $("data-panel-backdrop");
+    const dataPanelClose = $("data-panel-close");
+
+    // 寻访动画播放期间不允许打开面板
+    function openDataPanel() {
+      if (animationRunning) {
+        return;
+      }
+      dataPanel.classList.add("is-open");
+      dataPanel.setAttribute("aria-hidden", "false");
+    }
+
+    function closeDataPanel() {
+      dataPanel.classList.remove("is-open");
+      dataPanel.setAttribute("aria-hidden", "true");
+    }
+
+    dataButton.addEventListener("click", openDataPanel);
+    dataPanelClose.addEventListener("click", closeDataPanel);
+    dataPanelBackdrop.addEventListener("click", closeDataPanel);
+
+    // 点面板 padding 区域（内容卡片之外）也算「点面板外」
+    dataPanelSheet.addEventListener("click", (event) => {
+      if (event.target === dataPanelSheet) {
+        closeDataPanel();
+      }
+    });
+
+    // Esc 关闭面板；寻访动画播放时把 Esc 让给动画层（动画层的监听在自己那边处理）
+    window.addEventListener("keydown", (event) => {
+      if (event.key !== "Escape" || animationRunning) {
+        return;
+      }
+      if (dataPanel.classList.contains("is-open")) {
+        event.preventDefault();
+        closeDataPanel();
+      }
+    });
+
+    function formatRate(count, total) {
+      return total ? `${(count / total * 100).toFixed(2)}%` : "0.00%";
+    }
+
+    // 单个干员的基础出率（不含保底修正），用于卡池详情面板
+    function getOperatorRate(star, name) {
+      if (star === 6) {
+        return name === UP_SIX
+          ? BASE_RATES[6] * SIX_UP_RATE
+          : BASE_RATES[6] * (1 - SIX_UP_RATE) / RESIDENT[6].length;
+      }
+      if (star === 5) {
+        if (UP_FIVE_LIST.indexOf(name) !== -1) {
+          return BASE_RATES[5] * FIVE_UP_RATE / UP_FIVE_LIST.length;
+        }
+        return BASE_RATES[5] * (1 - FIVE_UP_RATE) / RESIDENT[5].length;
+      }
+      return BASE_RATES[star] / POOL[String(star)].length;
+    }
+
+    // 名字 → 徽标（联动限定 / 联动 UP），非联动干员返回 null
+    function createBadge(name, inline) {
+      let text = null;
+      let className = "";
+
+      if (name === UP_SIX) {
+        text = "联动限定";
+        className = "badge badge-limited";
+      } else if (UP_FIVE_LIST.indexOf(name) !== -1) {
+        text = "联动 UP";
+        className = "badge badge-up";
+      }
+
+      if (!text) {
+        return null;
+      }
+
+      const badge = document.createElement("span");
+      badge.className = inline ? `${className} badge-inline` : className;
+      badge.textContent = text;
+      return badge;
+    }
+
+    function createResultCard(result) {
+      const isCollabSix = result.isUp6;
+      const isCollabUp = result.isUp5;
+
+      const card = document.createElement("article");
+      card.className =
+        `result-card star-${result.star}` +
+        (isCollabSix ? " collab-six" : "") +
+        (isCollabUp ? " collab-up" : "");
+
+      // 联动 6★：扫光 + 字符彩带（纯 CSS）
+      if (isCollabSix) {
+        const shine = document.createElement("span");
+        shine.className = "shine";
+        shine.setAttribute("aria-hidden", "true");
+        card.appendChild(shine);
+
+        const confetti = document.createElement("div");
+        confetti.className = "confetti";
+        confetti.setAttribute("aria-hidden", "true");
+        const bits = ["✦", "✧", "★", "✦", "☆", "✧", "✦", "★"];
+        for (const bit of bits) {
+          const piece = document.createElement("span");
+          piece.textContent = bit;
+          confetti.appendChild(piece);
+        }
+        card.appendChild(confetti);
+      }
+
+      const meta = document.createElement("div");
+      meta.className = "card-meta";
+
+      const starText = document.createElement("span");
+      starText.className = "star-text";
+      starText.textContent = "★".repeat(result.star);
+
+      const number = document.createElement("span");
+      number.className = "card-number";
+      number.textContent = `第 ${result.drawNumber} 抽`;
+
+      meta.append(starText, number);
+
+      const name = document.createElement("div");
+      name.className = "operator-name";
+      name.textContent = result.name;
+
+      const foot = document.createElement("div");
+      foot.className = "card-foot";
+
+      const badge = createBadge(result.name, false);
+      if (badge) {
+        foot.appendChild(badge);
+      } else {
+        // 非联动干员留一个占位，保证 6★/5★/4★/3★ 卡片右侧对齐
+        const spacer = document.createElement("span");
+        spacer.textContent = "";
+        foot.appendChild(spacer);
+      }
+
+      const rarity = document.createElement("div");
+      rarity.className = "rarity-label";
+      rarity.textContent = `${result.star}★`;
+
+      foot.appendChild(rarity);
+      card.append(meta, name, foot);
+
+      return card;
+    }
+
+    function renderDrawResults(results) {
+      resultGrid.replaceChildren();
+
+      if (!results.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty-state";
+        empty.textContent = "还没有抽卡结果";
+        resultGrid.appendChild(empty);
+        return;
+      }
+
+      for (const result of results) {
+        resultGrid.appendChild(createResultCard(result));
+      }
+
+      // 本批结果里出现结城理就亮起庆祝条
+      const hasRitsu = results.some((item) => item.isUp6);
+      collabBanner.classList.toggle("is-on", hasRitsu);
+    }
+
+    /* ==================================================================
+     * 【动画层 · 寻访动画】行李袋寻访（拖拽开启 + 黑场转场 + 干员展示）
+     * ------------------------------------------------------------------
+     * 这一层只负责「怎么把结果演出来」，完全不参与抽卡 / 概率 / 保底 / 统计：
+     *   数据在 handleDraw 里就已经算完并写进 localStorage 了，
+     *   这里只是拿着 results 播动画，所以跳过动画不会影响任何数据。
+     *
+     * 阶段（类名加在 .scout-overlay 上，具体效果都写在 CSS 里）：
+     *   is-on            阶段一 袋子从下方升起 + 拖拽提示
+     *   is-dragging      阶段二 玩家拖拽拉链（--pull 由 rAF 写入）
+     *   is-bursting      阶段三 白光从缝口炸开 + 两档屏幕震动
+     *   is-file          阶段四 深色档案袋从包口滑出
+     *   is-darkening     阶段五 整幕均匀压暗到纯黑（没有闪屏）
+     *   is-showing-phase 阶段六 干员从黑场中浮现
+     *   is-leaving       收尾 展示淡出，干员网格整体显示
+     *
+     * 交互规则：
+     *   阶段一二：点击屏幕不算跳过（会和拖拽冲突），只能点 SKIP 或按 Esc
+     *   阶段三四五：点击无效，SKIP / Esc 可用（Esc = 跳过全部动画直接出结果）
+     *   阶段六：点击或任意键 = 下一个干员 / 返回；Esc = 跳过剩余展示
+     * ================================================================== */
+
+    // 各阶段的时间（毫秒）。想调节奏改这里就行，
+    // 标了「与 CSS 一致」的必须和 CSS 里对应动画的时长写成一样。
+    const SCOUT_TIMING = {
+      BAG_IN: 500,        // 阶段一：袋子升起时长（与 CSS 一致），播完才允许拖拽
+      RETURN_MS: 300,     // 没拉到底松手：弹回 0 的时长
+      CORE_LIGHT_AT: 120, // 拉到底后多久袋心光开始绽放（与 CSS 一致）
+      CORE_BLOOM: 380,    // 袋心光绽放时长（与 CSS 一致）
+      BURST_FLASH: 150,   // 光晕峰值时白光过一帧的时长（与 CSS 一致）
+      FLASH_AT: 550,      // 白光出现的时刻（与 CSS 一致）
+      FILE_AT: 750,       // 白光过后档案袋滑出
+      FILE_ENTER: 650,    // 档案滑出时长（与 CSS 一致）
+      FILE_HOLD: 600,     // 档案袋停留时长（让玩家看清）
+      DARKEN: 900,        // 阶段五：压暗时长（与 CSS 一致）
+      BLACK_HOLD: 350,    // 纯黑静默停顿
+      CAMERA_IMPACT: 600, // 6★ 镜头冲击时长（与 CSS 一致）
+      SHOW_LOCK: 300,     // 阶段六：每张开始后短暂屏蔽点击，避免手快连跳
+      STAR_STEP: 120,     // 星数逐颗点亮的间隔
+      SHOW_OUT: 180,      // 十连翻页时旧内容上滑淡出的时长（与 CSS 一致）
+      EXIT: 280,          // 收尾淡出时长（与 CSS 一致）
+      SPARK_COUNT: 14     // 火星粒子池大小
+    };
+
+    const scoutOverlay = $("scout-overlay");
+    const scoutCamera = $("scout-camera");
+    const scoutScene = $("scout-scene");
+    const scoutBag = $("scout-bag");
+    const scoutZip = $("scout-zip");
+    const scoutPull = $("scout-pull");
+    const scoutSparks = $("scout-sparks");
+    const scoutShowcase = $("scout-showcase");
+    const scoutShowName = $("scout-show-name");
+    const scoutShowCounter = $("scout-show-counter");
+    const scoutShowStars = $("scout-show-stars");
+    const scoutShowHint = $("scout-show-hint");
+    const scoutDots = $("scout-dots");
+    const scoutDotsFill = $("scout-dots-fill");
+    const scoutSkip = $("scout-skip");
+
+    // 当前展示的星数元素：每次 paintShowcase 都按干员星级重建（3★ 三个、6★ 六个）
+    let starSpans = [];
+
+    // 读取系统「减少动态效果」开关。用三元兜底：
+    // 万一某些老环境没有 matchMedia，也只会退化成「正常播动画」，而不会让整个页面报错。
+    const reduceMotionQuery = window.matchMedia
+      ? window.matchMedia("(prefers-reduced-motion: reduce)")
+      : { matches: false };
+
+    let animationRunning = false;  // 动画是否进行中（挡住连点）
+    let scoutPhase = "idle";       // idle / bag / drag / burst / file / darken / show / leaving
+    let animationTimers = [];      // 本次动画所有待触发的定时器，跳过时统一清掉
+    let animationCards = [];       // 本次要展示的卡片（收尾时整体显示）
+    let animationResults = [];     // 本次抽卡结果（只读，用来做展示）
+    let animationMaxStar = 3;      // 本批最高星级：决定漏光颜色与震动强度
+
+    let showIndex = 0;             // 当前展示到第几个干员
+    let showLocked = true;         // 展示刚开始的一小段时间内不接受点击
+    let bagReady = false;          // 袋子登场动画是否播完（播完才允许拖拽）
+
+    // 拖拽相关状态
+    let dragging = false;          // 手指/鼠标是否正按着
+    let returning = false;         // 没拉到底，是否正在弹回
+    let dragPointerId = null;
+    let dragStartX = 0;
+    let dragTravel = 1;            // 拉链头要滑过的水平距离（px）
+    let pullValue = 0;             // 当前进度 0~1（真正写进 CSS 的值）
+    let pullTarget = 0;            // 指针算出来的目标进度
+    let pullFrameId = 0;           // requestAnimationFrame 句柄
+    let returnStart = 0;           // 弹回动画的起始时间
+    let returnFrom = 0;            // 弹回动画的起始进度
+    let sparkDebt = 0;             // 火星"欠账"：拖动越快攒得越多
+    let sparkCursor = 0;           // 粒子池游标
+
+    // 动画专用定时器：统一登记，这样「跳过」时可以一次全部取消
+    function scoutLater(callback, delay) {
+      const id = window.setTimeout(() => {
+        animationTimers = animationTimers.filter((timer) => timer !== id);
+        callback();
+      }, delay);
+      animationTimers.push(id);
+    }
+
+    function clearScoutTimers() {
+      for (const id of animationTimers) {
+        window.clearTimeout(id);
+      }
+      animationTimers = [];
+    }
+
+    function stopPullFrames() {
+      if (pullFrameId) {
+        window.cancelAnimationFrame(pullFrameId);
+        pullFrameId = 0;
+      }
+    }
+
+    // 火星粒子池：只在页面加载时创建一次，之后靠 is-live 反复复用
+    function buildScoutSparks() {
+      const pieces = [];
+      for (let index = 0; index < SCOUT_TIMING.SPARK_COUNT; index += 1) {
+        const spark = document.createElement("span");
+        spark.className = "scout-spark";
+        pieces.push(spark);
+      }
+      scoutSparks.replaceChildren(...pieces);
+    }
+
+    /*
+     * 6★ 展示用的两层星点，同样只在页面加载时创建一次：
+     *   .scout-fall-stars  10 个飘落金星：从屏幕上方匀速落到下方，时长 7~12s 各不相同
+     *   .scout-twinkle     14 个点缀星点：散布在四周（避开正中央名字），各自呼吸闪烁
+     * 每个星点的水平位置 / 大小 / 时长 / 相位都写进 CSS 变量，动画本身在 CSS 里。
+     */
+    function buildShowcaseStars() {
+      const randomBetween = (min, max) => min + Math.random() * (max - min);
+      const pieces = [];
+
+      // 飘落金星：整体大约每秒至多一颗（用负 delay 把相位均匀错开）
+      for (let index = 0; index < 10; index += 1) {
+        const star = document.createElement("span");
+        star.className = "scout-fall-stars";
+        star.textContent = "✦";
+        star.setAttribute("aria-hidden", "true");
+        star.style.setProperty("--x", `${randomBetween(3, 97).toFixed(2)}%`);
+        star.style.setProperty("--size", `${randomBetween(1.2, 2.2).toFixed(2)}vmin`);
+        star.style.setProperty("--dur", `${randomBetween(7, 12).toFixed(2)}s`);
+        star.style.setProperty("--delay", `${(-index * 0.95 - randomBetween(0, 0.4)).toFixed(2)}s`);
+        pieces.push(star);
+      }
+
+      // 点缀星点：以屏幕中心为圆心散在一个圆环上，保证不会压住中间的名字
+      for (let index = 0; index < 14; index += 1) {
+        const star = document.createElement("span");
+        star.className = "scout-twinkle";
+        star.textContent = "✦";
+        star.setAttribute("aria-hidden", "true");
+        const angle = (index / 14) * Math.PI * 2 + randomBetween(-0.2, 0.2);
+        const radius = randomBetween(30, 56);
+        star.style.setProperty("--x", `calc(50% + ${(Math.cos(angle) * radius).toFixed(2)}vmin)`);
+        star.style.setProperty("--y", `calc(50% + ${(Math.sin(angle) * radius * 0.8).toFixed(2)}vmin)`);
+        star.style.setProperty("--size", `${randomBetween(1, 1.4).toFixed(2)}vmin`);
+        star.style.setProperty("--dur", `${randomBetween(2, 4).toFixed(2)}s`);
+        star.style.setProperty("--delay", `${(-randomBetween(0, 4)).toFixed(2)}s`);
+        pieces.push(star);
+      }
+
+      // 插到展示层最前面：它们在 z-index: 0 的文字层之下
+      scoutShowcase.prepend(...pieces);
+    }
+
+    // 复位所有阶段类（上一轮播放完或跳过之后都可能残留）
+    function resetScoutPhases() {
+      scoutOverlay.classList.remove(
+        "is-on",
+        "is-dragging",
+        "is-bursting",
+        "is-file",
+        "is-darkening",
+        "is-showing-phase",
+        "is-leaving"
+      );
+    }
+
+    /*
+     * 漏光颜色由本批结果的最高星级决定：
+     *   3★ 冷白 #e8ecef / 4★ 紫 #a06be8 / 5★ 金 #ffce6a / 6★ 流动金光
+     * 这里只切换类名，具体颜色和动画都写在 CSS 里。
+     */
+    function applyLeakColor(maxStar) {
+      scoutOverlay.classList.remove("leak-3", "leak-4", "leak-5", "leak-6");
+      const clamped = Math.min(Math.max(maxStar, 3), 6);
+      scoutOverlay.classList.add(`leak-${clamped}`);
+    }
+
+    /*
+     * 镜头冲击：只有 6★ 才有，而且只在「拉链拉到底」的一瞬间触发。
+     * 震动加在 .scout-camera 相机层上，标记 / 体积光 / 袋子 / 光 / 档案袋
+     * 作为一整幅画面一起动，内部没有任何相对位移；5★ 及以下完全不震。
+     */
+    function triggerCameraImpact() {
+      if (animationMaxStar < 6) {
+        return; // 只有 6★ 才震
+      }
+      scoutCamera.classList.remove("is-impact");
+      void scoutCamera.offsetWidth; // 先清掉再重新加上，动画才会重新播放
+      scoutCamera.classList.add("is-impact");
+      scoutLater(
+        () => scoutCamera.classList.remove("is-impact"),
+        SCOUT_TIMING.CAMERA_IMPACT
+      );
+    }
+
+    // 动画期间禁用按钮，防止连点（结束后恢复）
+    function setDrawControlsDisabled(disabled) {
+      for (const button of [
+        singleDrawButton,
+        tenDrawButton,
+        simulateButton,
+        resetButton
+      ]) {
+        button.disabled = disabled;
+      }
+    }
+
+    // 把卡片先摆成「未入场」状态，等整段动画结束再整体显示
+    function prepareCardsForAnimation(cards) {
+      resultGrid.classList.add("is-skip");
+      for (const card of cards) {
+        card.classList.add("is-pending");
+        card.classList.remove("is-revealed");
+      }
+      void resultGrid.offsetWidth;
+      resultGrid.classList.remove("is-skip");
+    }
+
+    // 一次性显示全部卡片（跳过或收尾时用 instant = true，直接到位不做过渡）
+    function revealAllCards(cards, instant) {
+      if (instant === true) {
+        resultGrid.classList.add("is-skip");
+      }
+
+      for (const card of cards) {
+        card.classList.remove("is-pending");
+        card.classList.add("is-revealed");
+      }
+
+      if (instant === true) {
+        void resultGrid.offsetWidth;
+        resultGrid.classList.remove("is-skip");
+      }
+    }
+
+    /* ---------------- 阶段二：拖拽拉链 ---------------- */
+
+    // 把进度写进 CSS 变量 --pull，拉链头位置 / 缝口张开 / 漏光强度全靠它
+    function applyPull(value) {
+      const clamped = Math.max(0, Math.min(value, 1));
+      scoutOverlay.style.setProperty("--pull", clamped.toFixed(4));
+    }
+
+    // 从拉链头当前位置"点亮"一颗火星（粒子池循环使用）
+    function emitSpark() {
+      const spark = scoutSparks.children[sparkCursor % SCOUT_TIMING.SPARK_COUNT];
+      sparkCursor += 1;
+      if (!spark) {
+        return;
+      }
+
+      // 把拉链头的屏幕坐标换算成舞台内坐标（getBoundingClientRect 已经包含旋转）
+      const pullRect = scoutPull.getBoundingClientRect();
+      const sceneRect = scoutScene.getBoundingClientRect();
+      const x = pullRect.left + pullRect.width / 2 - sceneRect.left;
+      const y = pullRect.top + pullRect.height / 2 - sceneRect.top;
+
+      // 每个火星随机一点方向，看起来更自然
+      const side = Math.random() < 0.5 ? -1 : 1;
+      spark.style.left = `${x}px`;
+      spark.style.top = `${y}px`;
+      spark.style.setProperty("--dx", `${(side * (1 + Math.random() * 4)).toFixed(2)}vmin`);
+      spark.style.setProperty("--up", `${(3 + Math.random() * 6).toFixed(2)}vmin`);
+      spark.style.setProperty("--down", `${(2 + Math.random() * 5).toFixed(2)}vmin`);
+
+      // 先摘掉 is-live 再读一次布局，动画就会从 0 重新播放
+      spark.classList.remove("is-live");
+      void spark.offsetWidth;
+      spark.classList.add("is-live");
+    }
+
+    /*
+     * 拖拽期间统一用 rAF 更新（比每个 pointermove 都写 CSS 更省性能）：
+     *   1) 写入 --pull
+     *   2) 按这一帧移动的距离攒火星，拖得越快喷得越密
+     *   3) 松手后负责 300ms ease-out 弹回
+     */
+    function scoutFrame(timestamp) {
+      pullFrameId = 0;
+
+      if (dragging) {
+        const movedPx = Math.abs(pullTarget - pullValue) * dragTravel;
+        pullValue = pullTarget;
+        applyPull(pullValue);
+
+        sparkDebt += movedPx * 0.05;
+        let emitted = 0;
+        while (sparkDebt >= 1 && emitted < 2) {
+          sparkDebt -= 1;
+          emitted += 1;
+          emitSpark();
+        }
+      } else if (returning) {
+        const elapsed = timestamp - returnStart;
+        const progress = Math.min(elapsed / SCOUT_TIMING.RETURN_MS, 1);
+        const eased = 1 - Math.pow(1 - progress, 3); // ease-out
+        pullValue = returnFrom * (1 - eased);
+        applyPull(pullValue);
+        if (progress >= 1) {
+          returning = false;
+          pullValue = 0;
+          applyPull(0);
+        }
+      }
+
+      if (dragging || returning) {
+        pullFrameId = window.requestAnimationFrame(scoutFrame);
+      }
+    }
+
+    function ensurePullFrames() {
+      if (!pullFrameId) {
+        pullFrameId = window.requestAnimationFrame(scoutFrame);
+      }
+    }
+
+    function onBagPointerDown(event) {
+      // 只有阶段一（袋子刚登场）才能开始拖
+      if (scoutPhase !== "bag" || !animationRunning) {
+        return;
+      }
+      if (typeof event.button === "number" && event.button !== 0) {
+        return; // 只响应左键 / 单指
+      }
+      if (!bagReady) {
+        return; // 袋子还在升起（约 500ms），这时候抓会造成位移跳变，等它站稳再拖
+      }
+
+      event.preventDefault();
+      dragging = true;
+      returning = false;
+      scoutPhase = "drag";
+      dragStartX = event.clientX;
+      pullTarget = 0;
+      pullValue = 0;
+      sparkDebt = 0;
+      // 拉链头要滑过的距离 = 轨道宽度的 80%（从右端 88% 滑到左端 8%）
+      dragTravel = Math.max(scoutZip.getBoundingClientRect().width * 0.8, 1);
+
+      // 指针捕获：手指滑出袋子也能继续拖（不支持的环境跳过即可）
+      if (event.pointerId !== undefined && typeof scoutBag.setPointerCapture === "function") {
+        try {
+          scoutBag.setPointerCapture(event.pointerId);
+        } catch (error) {
+          // 某些环境不支持指针捕获，忽略即可
+        }
+      }
+      dragPointerId = event.pointerId === undefined ? null : event.pointerId;
+
+      scoutOverlay.classList.add("is-dragging");
+      ensurePullFrames();
+    }
+
+    function onPointerMove(event) {
+      if (!dragging || scoutPhase !== "drag") {
+        return;
+      }
+      // 进度 = 向左拖动的水平位移 / 轨道全长
+      const movedLeft = dragStartX - event.clientX;
+      pullTarget = Math.max(0, Math.min(movedLeft / dragTravel, 1));
+      ensurePullFrames();
+
+      if (pullTarget >= 1) {
+        triggerBurst(); // 拉到底：立刻进入阶段三
+      }
+    }
+
+    function onPointerUp() {
+      if (!dragging) {
+        return;
+      }
+      dragging = false;
+
+      if (dragPointerId !== null && typeof scoutBag.releasePointerCapture === "function") {
+        try {
+          scoutBag.releasePointerCapture(dragPointerId);
+        } catch (error) {
+          // 忽略：没捕获成功时释放本来就会报错
+        }
+      }
+      dragPointerId = null;
+      scoutOverlay.classList.remove("is-dragging");
+
+      if (scoutPhase !== "drag") {
+        return; // 已经拉到底爆发了
+      }
+
+      if (pullValue >= 1) {
+        triggerBurst();
+        return;
+      }
+
+      // 没拉到底：约 300ms ease-out 弹回 0，然后可以重新拖
+      scoutPhase = "bag";
+      returning = true;
+      returnStart = window.performance.now();
+      returnFrom = pullValue;
+      ensurePullFrames();
+    }
+
+    /* ---------------- 阶段三 / 四 / 五：爆发 → 档案 → 压暗 ---------------- */
+
+    function triggerBurst() {
+      if (scoutPhase !== "drag" && scoutPhase !== "bag") {
+        return;
+      }
+
+      dragging = false;
+      returning = false;
+      stopPullFrames();
+      pullValue = 1;
+      applyPull(1);
+
+      scoutPhase = "burst";
+      scoutOverlay.classList.remove("is-dragging");
+      scoutOverlay.classList.add("is-bursting");
+      // 拉到底的那一瞬间：6★ 才震（镜头感），随后袋心光、白光、档案袋依次发生
+      triggerCameraImpact();
+      scheduleAfterBurst();
+    }
+
+    function scheduleAfterBurst() {
+      // 袋心光与白光都由 is-bursting 上的 animation-delay 负责（120ms / 550ms），
+      // 这里只管白光退去之后的事：
+      scoutLater(() => {
+        scoutPhase = "file";
+        scoutOverlay.classList.add("is-file");
+      }, SCOUT_TIMING.FILE_AT);
+
+      // 阶段五：档案袋停留结束后，整幕均匀压暗到纯黑
+      const darkenAt =
+        SCOUT_TIMING.FILE_AT + SCOUT_TIMING.FILE_ENTER + SCOUT_TIMING.FILE_HOLD;
+      scoutLater(() => {
+        scoutPhase = "darken";
+        scoutOverlay.classList.add("is-darkening");
+      }, darkenAt);
+
+      // 阶段六：纯黑静默停顿后，干员从黑暗中浮现
+      scoutLater(() => {
+        scoutPhase = "show";
+        scoutOverlay.classList.add("is-showing-phase");
+        startShowcase();
+      }, darkenAt + SCOUT_TIMING.DARKEN + SCOUT_TIMING.BLACK_HOLD);
+    }
+
+    /* ---------------- 阶段六：干员展示 ---------------- */
+
+    // 把第 index 个结果画到展示层上（名字 / 计数 / 星数 / 配色档 / 小圆点）
+    function paintShowcase(index) {
+      const result = animationResults[index];
+      const total = animationResults.length;
+
+      // 氛围光与星色档位
+      scoutShowcase.classList.remove("show-3", "show-4", "show-5", "show-6");
+      scoutShowcase.classList.add(`show-${Math.min(Math.max(result.star, 3), 6)}`);
+
+      scoutShowName.textContent = result.name;
+
+      // 「第 N / 10 抽」：单抽不显示
+      if (total > 1) {
+        scoutShowCounter.hidden = false;
+        scoutShowCounter.textContent = `第 ${index + 1} / ${total} 抽`;
+      } else {
+        scoutShowCounter.hidden = true;
+      }
+
+      // 底部提示：还有下一个就说「点击继续」，最后一个说「点击返回」
+      scoutShowHint.textContent = index + 1 < total ? "点击继续" : "点击返回";
+
+      // 星数：按当前干员的星级重建 span（数量正确、每个里面都有 ★），
+      // 十连翻页时也会重建，所以上一颗的点亮状态不会残留
+      starSpans = [];
+      for (let count = 0; count < result.star; count += 1) {
+        const span = document.createElement("span");
+        span.textContent = "★";
+        starSpans.push(span);
+      }
+      scoutShowStars.replaceChildren(...starSpans);
+
+      // 小圆点进度
+      if (total > 1) {
+        scoutDots.classList.add("is-on");
+        scoutDotsFill.style.width = `${(index + 1) / total * 100}%`;
+      } else {
+        scoutDots.classList.remove("is-on");
+        scoutDotsFill.style.width = "0%";
+      }
+    }
+
+    // 星数逐颗点亮（每颗间隔 120ms，CSS 里带 scale pop 弹跳）
+    function lightStars(star) {
+      for (let index = 0; index < Math.min(star, starSpans.length); index += 1) {
+        const span = starSpans[index];
+        if (index === 0) {
+          span.classList.add("is-lit");
+        } else {
+          scoutLater(() => span.classList.add("is-lit"), index * SCOUT_TIMING.STAR_STEP);
+        }
+      }
+    }
+
+    // 触发一次入场动画（翻页时也用它重新播放入场）
+    function startShowAnimations() {
+      scoutShowcase.classList.remove("is-showing", "is-out");
+      void scoutShowcase.offsetWidth; // 强制回流，让 CSS 动画从头播放
+      scoutShowcase.classList.add("is-showing");
+      lightStars(animationResults[showIndex].star);
+
+      // 刚开始的一小段时间不接受点击，避免手快把第一张跳过去
+      showLocked = true;
+      scoutLater(() => {
+        showLocked = false;
+      }, SCOUT_TIMING.SHOW_LOCK);
+    }
+
+    function startShowcase() {
+      showIndex = 0;
+      paintShowcase(showIndex);
+      startShowAnimations();
+    }
+
+    /*
+     * 点击 / 按键：还有下一个就切下一个，否则回主界面。
+     * 十连翻页时旧内容快速上滑淡出，新内容再滑入。
+     */
+    function advanceShowcase() {
+      if (scoutPhase !== "show" || showLocked) {
+        return;
+      }
+
+      if (showIndex + 1 < animationResults.length) {
+        scoutShowcase.classList.add("is-out");
+        scoutLater(() => {
+          showIndex += 1;
+          paintShowcase(showIndex);
+          startShowAnimations();
+        }, SCOUT_TIMING.SHOW_OUT);
+        return;
+      }
+
+      beginScoutExit();
+    }
+
+    /* ---------------- 收尾 ---------------- */
+
+    // 展示淡出 + 干员网格瞬间整体显示
+    function beginScoutExit() {
+      if (!animationRunning || scoutPhase === "leaving" || scoutPhase === "idle") {
+        return;
+      }
+
+      scoutPhase = "leaving";
+      clearScoutTimers();
+      stopPullFrames();
+      dragging = false;
+      returning = false;
+
+      scoutOverlay.classList.remove("is-dragging");
+      scoutShowcase.classList.remove("is-showing");
+      scoutOverlay.classList.add("is-leaving");
+
+      // 玩家已经逐个看过每个干员，这里直接把整格卡片显示出来
+      revealAllCards(animationCards, true);
+
+      scoutLater(finishScoutAnimation, SCOUT_TIMING.EXIT);
+    }
+
+    // 彻底收工：清干净所有动画状态、恢复按钮、把幕布藏起来
+    function finishScoutAnimation() {
+      animationRunning = false;
+      scoutPhase = "idle";
+      animationCards = [];
+      animationResults = [];
+      showIndex = 0;
+      showLocked = true;
+
+      resetScoutPhases();
+      scoutCamera.classList.remove("is-impact");
+      scoutShowcase.classList.remove("is-showing", "is-out", "show-3", "show-4", "show-5", "show-6");
+      scoutDots.classList.remove("is-on");
+      scoutOverlay.setAttribute("aria-hidden", "true");
+      setDrawControlsDisabled(false);
+
+      // 演出到这里才算结束（正常播完和跳过都走这条路径），
+      // 此时才把主界面左下角的保底计数更新成新值
+      renderPityCounter();
+    }
+
+    // 跳过：任何阶段都可用（SKIP 按钮 / Esc）
+    function skipScoutAnimation() {
+      if (!animationRunning) {
+        return;
+      }
+      beginScoutExit();
+    }
+
+    /* ---------------- 入口 ---------------- */
+
+    /*
+     * 播放一次完整的寻访动画。
+     * results 已经包含全部抽卡结果，这里只决定它们「什么时候露面」：
+     * 阶段一到阶段五都是纯 CSS 动画，JS 只负责在正确的时间点加类名。
+     */
+    function playScoutAnimation(results) {
+      const cards = Array.from(resultGrid.querySelectorAll(".result-card"));
+      animationCards = cards;
+      animationResults = results.slice();
+
+      // 用户开启了系统「减少动态效果」：不播动画、不进入拖拽，直接出结果。
+      // 这条分支不会走到 finishScoutAnimation，所以必须就地补一次计数更新，
+      // 否则这类玩家的保底计数永远停在旧值。
+      if (reduceMotionQuery.matches) {
+        revealAllCards(cards, true);
+        renderPityCounter();
+        return;
+      }
+
+      // 本批结果的最高星级：决定漏光颜色、氛围光与震动强度
+      animationMaxStar = 3;
+      for (const result of results) {
+        if (result.star > animationMaxStar) {
+          animationMaxStar = result.star;
+        }
+      }
+
+      animationRunning = true;
+      scoutPhase = "bag";
+      showIndex = 0;
+      showLocked = true;
+      bagReady = false; // 袋子站稳之前不接受拖拽，避免打断登场动画造成跳动
+      setDrawControlsDisabled(true); // 动画期间按钮全部禁用，连点无效
+      prepareCardsForAnimation(cards);
+
+      // 复位上一轮的一切，强制回流后再开演，保证 CSS 动画每次都从头播放
+      resetScoutPhases();
+      scoutBag.classList.remove("is-floating"); // 去掉 floating，登场动画才会重新播
+      scoutCamera.classList.remove("is-impact");
+      scoutShowcase.classList.remove("is-showing", "is-out");
+      scoutDots.classList.remove("is-on");
+      scoutDotsFill.style.width = "0%";
+      applyLeakColor(animationMaxStar);
+      pullValue = 0;
+      pullTarget = 0;
+      applyPull(0);
+
+      scoutOverlay.setAttribute("aria-hidden", "false");
+      void scoutOverlay.offsetWidth;
+      scoutOverlay.classList.add("is-on"); // 阶段一：幕布 + 袋子登场
+
+      // 登场动画播完才打开拖拽开关；同一时刻切到 floating 状态，
+      // 内层动画从此只剩 bag-float（缓慢呼吸浮动），袋子不会再有任何晃动
+      scoutLater(() => {
+        bagReady = true;
+        scoutBag.classList.add("is-floating");
+      }, SCOUT_TIMING.BAG_IN);
+    }
+
+    /*
+     * 幕布上的点击：
+     *   阶段六 → 下一个干员 / 返回
+     *   阶段一二（拖拽阶段）→ 不算跳过，避免和拖拽冲突
+     *   阶段三四五（自动播放段）→ 点击无效
+     */
+    scoutOverlay.addEventListener("click", () => {
+      if (!animationRunning || scoutPhase !== "show") {
+        return;
+      }
+      advanceShowcase();
+    });
+
+    // SKIP 按钮：任何阶段都能跳过，并且不要让点击冒泡成「切换下一个」
+    scoutSkip.addEventListener("click", (event) => {
+      event.stopPropagation();
+      skipScoutAnimation();
+    });
+
+    // 键盘：Esc 任何阶段都跳过；其他按键只在阶段六用于切换/返回
+    window.addEventListener("keydown", (event) => {
+      if (!animationRunning) {
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        skipScoutAnimation();
+        return;
+      }
+      if (scoutPhase === "show") {
+        event.preventDefault();
+        advanceShowcase();
+      }
+    });
+
+    // 拖拽：pointerdown 落在袋子上，move/up 挂在 window 上（鼠标滑出袋子也能继续拖）
+    scoutBag.addEventListener("pointerdown", onBagPointerDown);
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
+
+    // 历史记录行：联动三人名字旁始终带徽标
+    function createHistoryRow(item) {
+      const row = document.createElement("li");
+
+      const label = document.createElement("span");
+      label.className = "history-draw";
+      label.textContent = `第 ${item.drawNumber} 抽`;
+
+      const name = document.createElement("span");
+      name.className =
+        "history-name" + (item.name === UP_SIX ? " collab-six" : "");
+      name.textContent = item.name;
+
+      const badge = createBadge(item.name, true);
+      if (badge) {
+        name.appendChild(badge);
+      }
+
+      row.append(label, name);
+      return row;
+    }
+
+    function fillHistoryList(listElement, items, emptyText) {
+      listElement.replaceChildren();
+
+      if (!items.length) {
+        const empty = document.createElement("li");
+        empty.className = "history-empty";
+        empty.textContent = emptyText;
+        listElement.appendChild(empty);
+        return;
+      }
+
+      for (const item of items) {
+        listElement.appendChild(createHistoryRow(item));
+      }
+    }
+
+    /*
+     * 主界面左下角的「剩余 N 次寻访必得」计数条。
+     *
+     * 单独拆成一个函数，故意不在 renderStats 里更新：
+     *   handleDraw 是「先写存档 → renderStats → 播动画」的顺序，
+     *   如果这里跟着 renderStats 一起刷新，黑幕还没盖上数字就变了，
+     *   玩家能直接从「减一 / 回到 120」看出这抽有没有出结城理（剧透）。
+     * 所以只在四个「演出已经结束」的时机调用它：
+     *   1) 页面初始加载
+     *   2) handleReset（重置后立即刷新，没有动画也就没有剧透）
+     *   3) finishScoutAnimation（正常结束与跳过都会走到这里）
+     *   4) playScoutAnimation 的「减少动态效果」提前返回分支
+     *      （该分支不经过 finishScoutAnimation，必须就地补一次）
+     */
+    function renderPityCounter() {
+      const remain120 = Math.max(RITSU_HARD_PITY - stats.state.pity120, 0);
+      poolPityCounter.textContent = String(remain120);
+    }
+
+    function renderStats() {
+      const state = stats.state;
+
+      statTotal.textContent = String(stats.totalDraws);
+      drawSummary.textContent = `累计抽数：${stats.totalDraws}`;
+
+      /* ---- 星级统计（原有统计全部保留） ---- */
+      for (const star of [3, 4, 5, 6]) {
+        const count = stats.starCounts[star];
+        const rate = stats.totalDraws ? count / stats.totalDraws : 0;
+
+        $(`rate-${star}`).textContent =
+          `${count} 次 · ${formatRate(count, stats.totalDraws)}`;
+        $(`bar-${star}`).style.width = `${Math.min(rate * 100, 100)}%`;
+      }
+
+      /* ---- 6★ 概率保底 ---- */
+      const sixRate = getSixStarRate(state.pity6);
+      statPity.textContent = `${state.pity6} 抽`;
+      pityProgress.style.width = `${Math.min(state.pity6 / SIX_PITY_MAX * 100, 100)}%`;
+      pityNote.textContent = state.pity6 < SIX_PITY_START
+        ? `当前 6★ 出率 ${(sixRate * 100).toFixed(2)}%，连续 ${SIX_PITY_START} 抽未出 6★ 后每抽 +2%`
+        : `当前 6★ 出率 ${(sixRate * 100).toFixed(2)}%（每抽 +2% 已生效）`;
+
+      const sixCount = stats.sixStarHistory.length;
+      statAverage.textContent = sixCount
+        ? `${(stats.totalDraws / sixCount).toFixed(2)} 抽`
+        : "--";
+
+      /* ---- 结城理 120 抽硬保底 ---- */
+      const ritsuCount = stats.collabCounts[UP_SIX];
+      const remain120 = Math.max(RITSU_HARD_PITY - state.pity120, 0);
+      statRitsu.textContent = `${ritsuCount} 次`;
+      ritsuProgress.style.width =
+        `${Math.min(state.pity120 / (RITSU_HARD_PITY - 1) * 100, 100)}%`;
+      ritsuNote.textContent = state.pity120 >= RITSU_HARD_PITY - 1
+        ? "下一抽必定获得结城理（120 抽硬保底已触发）"
+        : `距 120 保底还剩 ${remain120} 抽（已累计 ${state.pity120} 抽未出结城理）`;
+
+      /* ---- 5★ UP 保底 ---- */
+      statPity5up.textContent = `${state.pity5up} 抽`;
+      pity5upProgress.style.width =
+        `${Math.min(state.pity5up / PITY5UP_LIMIT * 100, 100)}%`;
+      pity5upNote.textContent = state.pity5up >= PITY5UP_LIMIT
+        ? "下一次抽到 5★ 必定为联动 UP（保底已生效）"
+        : `距 5★ UP 保底还剩 ${PITY5UP_LIMIT - state.pity5up} 抽（获得非 UP 5★ 不会清零）`;
+
+      /* ---- 「另一名」保证 ---- */
+      statBuff.textContent = state.buffUsed ? "已触发" : "未触发";
+      if (state.buffUsed) {
+        statBuffNote.textContent =
+          "一次性保证已用完：首次获得 UP 5★ 后，下一只 5★ 已强制为另一名";
+      } else if (state.firstUp5) {
+        const other = state.firstUp5 === UP_FIVE_A ? UP_FIVE_B : UP_FIVE_A;
+        statBuffNote.textContent =
+          `已获得 ${state.firstUp5}，下一只 5★ 必定为 ${other}`;
+      } else {
+        statBuffNote.textContent =
+          "首次获得任意一名 UP 5★ 后，下一只 5★ 必为另一名（全局只触发一次）";
+      }
+
+      statAgaes.textContent = String(stats.collabCounts[UP_FIVE_A]);
+      statYukari.textContent = String(stats.collabCounts[UP_FIVE_B]);
+
+      /* ---- 历史记录 ---- */
+      historyCount.textContent = `共 ${sixCount} 个`;
+      fillHistoryList(
+        historyList,
+        stats.sixStarHistory.slice().reverse(),
+        "暂无 6★ 记录"
+      );
+
+      const collabRecords = stats.sixStarHistory
+        .filter((item) => item.name === UP_SIX)
+        .concat(stats.up5History)
+        .sort((a, b) => b.drawNumber - a.drawNumber);
+      collabHistoryCount.textContent = `共 ${collabRecords.length} 个`;
+      fillHistoryList(
+        collabHistoryList,
+        collabRecords,
+        "暂无联动干员记录"
+      );
+    }
+
+    // 卡池详情面板：按星级分组列出全部干员与出率
+    function renderPoolDetails() {
+      poolDetail.replaceChildren();
+
+      const notes = {
+        6: "其中 50% 为联动限定 结城理，其余 50% 由 44 名常驻 6★ 均分",
+        5: "其中 50% 为联动 UP（埃癸斯 25% + 岳羽由加莉 25%），其余 50% 由 44 名常驻 5★ 均分",
+        4: "无任何保底",
+        3: "无任何保底"
+      };
+
+      for (const star of [6, 5, 4, 3]) {
+        const list = POOL[String(star)];
+        const group = document.createElement("details");
+        group.className = `pool-group star-${star}`;
+        group.open = star === 6;
+
+        const summary = document.createElement("summary");
+        summary.textContent =
+          `${star}★ 干员 ${list.length} 名 · 合计出率 ` +
+          `${(BASE_RATES[star] * 100).toFixed(0)}%`;
+        group.appendChild(summary);
+
+        const note = document.createElement("p");
+        note.className = "pool-note";
+        note.textContent = notes[star];
+        group.appendChild(note);
+
+        const ul = document.createElement("ul");
+        ul.className = "pool-list";
+
+        for (const name of list) {
+          const li = document.createElement("li");
+          const isUp =
+            name === UP_SIX || UP_FIVE_LIST.indexOf(name) !== -1;
+          li.className = isUp ? "pool-item up" : "pool-item";
+
+          const nameSpan = document.createElement("span");
+          nameSpan.className = "pool-name";
+          nameSpan.textContent = name;
+
+          const badge = createBadge(name, true);
+          if (badge) {
+            nameSpan.appendChild(badge);
+          }
+
+          const rateSpan = document.createElement("span");
+          rateSpan.className = "pool-rate";
+          rateSpan.textContent =
+            `${(getOperatorRate(star, name) * 100).toFixed(4)}%`;
+
+          li.append(nameSpan, rateSpan);
+          ul.appendChild(li);
+        }
+
+        group.appendChild(ul);
+        poolDetail.appendChild(group);
+      }
+
+      const foot = document.createElement("p");
+      foot.className = "pool-note";
+      foot.textContent =
+        "以上为不含保底修正的基础出率。实际抽卡时 6★ 概率保底、" +
+        "5★ UP 保底与「另一名」保证会让实际出率略有变化。";
+      poolDetail.appendChild(foot);
+    }
+
+    function handleDraw(count) {
+      // 动画播放期间点击抽卡按钮没有反应（按钮本身在这期间也是 disabled 的）
+      if (animationRunning) {
+        return;
+      }
+
+      const results = [];
+      for (let index = 0; index < count; index += 1) {
+        results.push(performPersonalDraw(stats));
+      }
+
+      // 先把数据和统计落定（performPersonalDraw 里已经逐抽写进 localStorage），
+      // 再交给动画层决定卡片什么时候露面 —— 这样跳过动画也不会丢任何数据。
+      renderStats();
+      renderDrawResults(results);
+      playScoutAnimation(results);
+    }
+
+    function createCell(text, tagName) {
+      const cell = document.createElement(tagName || "td");
+      cell.textContent = text;
+      return cell;
+    }
+
+    function renderSimulation(summary) {
+      const drawCount = summary.drawCount;
+      const theory = getTheoreticalRates();
+      const tableWrap = document.createElement("div");
+      tableWrap.className = "table-scroll";
+
+      const table = document.createElement("table");
+      table.className = "sim-table";
+
+      const head = document.createElement("thead");
+      const headRow = document.createElement("tr");
+      for (const label of ["星级", "基础理论", "模拟概率", "模拟次数"]) {
+        headRow.appendChild(createCell(label, "th"));
+      }
+      head.appendChild(headRow);
+
+      const body = document.createElement("tbody");
+      for (const star of [6, 5, 4, 3]) {
+        const row = document.createElement("tr");
+        row.append(
+          createCell(`${star}★`),
+          createCell(`${(theory.rates[star] * 100).toFixed(3)}%`),
+          createCell(`${(summary.counts[star] / drawCount * 100).toFixed(3)}%`),
+          createCell(String(summary.counts[star]))
+        );
+        body.appendChild(row);
+      }
+
+      table.append(head, body);
+      tableWrap.appendChild(table);
+
+      const average = document.createElement("p");
+      average.className = "sim-average";
+      average.textContent = summary.sixCount
+        ? `平均每抽出 1 个 6★：基础理论 ${theory.expectedAverage.toFixed(2)} 抽，` +
+          `模拟 ${(drawCount / summary.sixCount).toFixed(2)} 抽`
+        : `平均每抽出 1 个 6★：基础理论 ${theory.expectedAverage.toFixed(2)} 抽，模拟未出 6★`;
+
+      const sixRate = summary.sixCount / drawCount;
+      const ritsuAverage = summary.cast.ritsu
+        ? drawCount / summary.cast.ritsu
+        : Infinity;
+      const up5Share = summary.fiveStarCount
+        ? summary.up5Count / summary.fiveStarCount
+        : 0;
+      const ritsuShare = summary.sixCount
+        ? summary.cast.ritsu / summary.sixCount
+        : 0;
+
+      const notes = document.createElement("ul");
+      notes.className = "sim-notes";
+      const lines = [
+        `6★ 综合出货率：${(sixRate * 100).toFixed(3)}%（基础理论 ` +
+          `${(theory.rates[6] * 100).toFixed(3)}%，差额来自结城理 120 抽硬保底额外产出的 6★）`,
+        `6★ 最大间隔：${summary.maxSixGap} 抽（验收要求 ≤ 99 抽）`,
+        `结城理：${summary.cast.ritsu} 次 · 平均间隔 ` +
+          `${ritsuAverage === Infinity ? "--" : ritsuAverage.toFixed(2)} 抽 · ` +
+          `最大间隔 ${summary.maxRitsuGap} 抽（必须 ≤ 120 抽）`,
+        `5★ 出货中 UP 占比：${(up5Share * 100).toFixed(2)}%（埃癸斯 ` +
+          `${summary.cast.agaes} · 岳羽由加莉 ${summary.cast.yukari}）`,
+        `6★ 出货中结城理占比：${(ritsuShare * 100).toFixed(2)}%`
+      ];
+
+      for (const line of lines) {
+        const li = document.createElement("li");
+        li.textContent = line;
+        notes.appendChild(li);
+      }
+
+      simulationOutput.replaceChildren(tableWrap, average, notes);
+    }
+
+    function handleSimulation() {
+      if (animationRunning) {
+        return; // 动画播放期间不启动模拟
+      }
+
+      simulateButton.disabled = true;
+      simulateButton.textContent = "模拟中…";
+
+      // 先让浏览器显示“模拟中”，再执行同步模拟，避免界面看起来没有响应
+      setTimeout(() => {
+        try {
+          renderSimulation(simulateBatch(100000));
+        } finally {
+          simulateButton.disabled = false;
+          simulateButton.textContent = "模拟 100000 次";
+        }
+      }, 0);
+    }
+
+    function handleReset() {
+      if (animationRunning) {
+        return; // 动画播放期间不能重置，避免清掉正在演的这批结果
+      }
+
+      const firstConfirm = confirm(
+        "确定要清空全部个人抽卡统计与保底进度吗？"
+      );
+      if (!firstConfirm) {
+        return;
+      }
+
+      const secondConfirm = confirm("再次确认：此操作无法撤销。");
+      if (!secondConfirm) {
+        return;
+      }
+
+      stats = createNewStats();
+      try {
+        localStorage.removeItem(STORAGE_KEY);
+      } catch (error) {
+        // 本地存储不可用时，只重置当前会话
+      }
+      saveStats(stats);
+      renderDrawResults([]);
+      renderStats();
+      renderPityCounter(); // 重置后主界面的保底计数立刻回到 120（没有动画，不会剧透）
+      collabBanner.classList.remove("is-on");
+      simulationOutput.textContent = "模拟结果不会计入个人统计";
+    }
+
+    singleDrawButton.addEventListener("click", () => handleDraw(1));
+    tenDrawButton.addEventListener("click", () => handleDraw(10));
+    simulateButton.addEventListener("click", handleSimulation);
+    resetButton.addEventListener("click", handleReset);
+
+    // 控制台调试入口：Gacha.selfTest() / Gacha.verifyPool() / Gacha.simulate(100000)
+    window.Gacha = {
+      POOL: POOL,
+      RESIDENT: RESIDENT,
+      UP_SIX: UP_SIX,
+      UP_FIVE_LIST: UP_FIVE_LIST,
+      drawOne: drawOne,
+      createPityState: createPityState,
+      createNewStats: createNewStats,
+      simulateBatch: simulateBatch,
+      verifyPool: verifyPool,
+      selfTest: selfTest,
+      makeRng: makeRng,
+      loadStats: loadStats,
+      saveStats: saveStats
+    };
+
+    // 动画层初始化：火星粒子与 6★ 展示星点都只创建一次，之后由 CSS 复用
+    buildScoutSparks();
+    buildShowcaseStars();
+    renderPoolDetails();
+    renderStats();
+    renderPityCounter(); // 初始加载也刷新主界面的保底计数
+  </script>
+</body>
+</html>
